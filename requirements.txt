@@ -4,3 +4,4 @@ google-genai
 gTTS
 gunicorn
 python-dotenv
+genanki

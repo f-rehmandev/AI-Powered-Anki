@@ -1,16 +1,20 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_file
 import os
 import json
 import requests
 import base64
 import re
+import hashlib
 import tempfile
+import uuid
+import io
 from html import escape
 
 from dotenv import load_dotenv
 from google import genai
 from gtts import gTTS
 from gtts.lang import tts_langs
+import genanki
 
 
 app = Flask(__name__)
@@ -76,6 +80,43 @@ def anki_request(action, params=None):
         raise Exception(
             f"AnkiConnect connection error: {str(e)}"
         )
+
+
+# =========================================================
+# GTTS LANGUAGE CACHE
+# =========================================================
+#
+# tts_langs() fetches the supported-language list from Google
+# over the network. Calling it on every single pronunciation
+# request is slow and wasteful, so we fetch it once and reuse
+# it. If the fetch fails at import time (e.g. no internet yet),
+# we fall back to fetching lazily on first use.
+
+_TTS_LANGS_CACHE = None
+
+
+def get_tts_langs():
+
+    global _TTS_LANGS_CACHE
+
+    if _TTS_LANGS_CACHE is None:
+
+        _TTS_LANGS_CACHE = tts_langs()
+
+    return _TTS_LANGS_CACHE
+
+
+def get_language_code(language):
+
+    available_languages = get_tts_langs()
+
+    for code, language_name in available_languages.items():
+
+        if language_name.lower() == language.lower():
+
+            return code
+
+    return None
 
 
 # =========================================================
@@ -584,18 +625,9 @@ def create_pronunciation(word, language):
 
     # gTTS contains a built-in list of supported languages.
     # We match the language name selected by the user
-    # against that list.
+    # against that list (cached after the first lookup).
 
-    available_languages = tts_langs()
-
-    language_code = None
-
-    for code, language_name in available_languages.items():
-
-        if language_name.lower() == language.lower():
-
-            language_code = code
-            break
+    language_code = get_language_code(language)
 
     if not language_code:
 
@@ -622,9 +654,12 @@ def create_pronunciation(word, language):
 
     filename = f"{safe_language}_{safe_word}.mp3"
 
+    # A unique temp path avoids two concurrent requests for the
+    # same word/language colliding on the same file on disk.
+
     temp_path = os.path.join(
         tempfile.gettempdir(),
-        filename
+        f"{uuid.uuid4().hex}_{filename}"
     )
 
 
@@ -692,6 +727,63 @@ def create_pronunciation(word, language):
 
                 pass
 
+# =========================================================
+# CREATE PRONUNCIATION FILE FOR ANKI PACKAGE
+# =========================================================
+
+def create_pronunciation_file(word, language):
+
+    if not word:
+        raise Exception(
+            "Cannot generate pronunciation because the word is empty."
+        )
+
+    # Find the gTTS language code from the selected
+    # language name (cached after the first lookup).
+
+    language_code = get_language_code(language)
+
+    if not language_code:
+
+        raise Exception(
+            f"Pronunciation is not currently available for {language}."
+        )
+
+    # Create a safe filename.
+
+    safe_word = re.sub(
+        r"[^a-zA-Z0-9äöüÄÖÜß_-]",
+        "_",
+        word
+    )
+
+    safe_language = re.sub(
+        r"[^a-zA-Z0-9_-]",
+        "_",
+        language.lower()
+    )
+
+    filename = f"{safe_language}_{safe_word}.mp3"
+
+    # A unique temp path avoids two concurrent requests colliding
+    # on the same file on disk.
+
+    temp_path = os.path.join(
+        tempfile.gettempdir(),
+        f"{uuid.uuid4().hex}_{filename}"
+    )
+
+    # Generate the MP3.
+
+    tts = gTTS(
+        text=word,
+        lang=language_code,
+        slow=False
+    )
+
+    tts.save(temp_path)
+
+    return temp_path
 
 # =========================================================
 # ADD FLASHCARD TO ANKI
@@ -878,17 +970,38 @@ def add_to_anki():
 
 
         # =================================================
-        # GENERATE PRONUNCIATION
+        # GENERATE PRONUNCIATION (non-fatal)
         # =================================================
+        #
+        # If gTTS/AnkiConnect media storage fails (unsupported
+        # language, no internet, etc.) we still want the note
+        # itself to be saved — just without audio — rather than
+        # failing the whole request.
 
-        pronunciation_file = create_pronunciation(
-            word,
-            language
-        )
+        pronunciation_html = ""
 
-        pronunciation = (
-            f'<div>[sound:{escape(pronunciation_file)}]</div>'
-        )
+        try:
+
+            pronunciation_file = create_pronunciation(
+                word,
+                language
+            )
+
+            pronunciation_html = (
+                "<b>🔊 Pronunciation:</b>"
+                "<br>"
+                f'<div>[sound:{escape(pronunciation_file)}]</div>'
+            )
+
+        except Exception as pronunciation_error:
+
+            pronunciation_file = None
+
+            pronunciation_html = (
+                "<b>🔊 Pronunciation:</b>"
+                "<br>"
+                f"<div>{escape(str(pronunciation_error))}</div>"
+            )
 
 
         # =================================================
@@ -980,11 +1093,7 @@ def add_to_anki():
 
 <br><br>
 
-<b>🔊 Pronunciation:</b>
-
-<br>
-
-{pronunciation}
+{pronunciation_html}
 
 </div>
 """
@@ -1069,7 +1178,9 @@ def add_to_anki():
             "success": True,
 
             "message":
-                "Flashcard and pronunciation added to Anki!",
+                "Flashcard and pronunciation added to Anki!"
+                if pronunciation_file
+                else "Flashcard added to Anki (pronunciation unavailable).",
 
             "note_id":
                 note_id,
@@ -1086,6 +1197,381 @@ def add_to_anki():
             "error":
                 f"Could not add the flashcard to Anki: {str(e)}"
 
+        }), 500
+
+# =========================================================
+# DOWNLOAD FLASHCARD AS ANKI PACKAGE
+# =========================================================
+
+@app.route("/download-flashcard", methods=["POST"])
+def download_flashcard():
+
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "error": "No flashcard data received."
+        }), 400
+
+    card = data.get("card")
+    language = str(
+        data.get(
+            "language",
+            ""
+        )
+    ).strip()
+
+    if not isinstance(card, dict):
+        return jsonify({
+            "error": "No valid flashcard data was received."
+        }), 400
+
+    if not language:
+        return jsonify({
+            "error": "No language was selected."
+        }), 400
+
+    # -----------------------------------------------------
+    # GET CARD DATA
+    # -----------------------------------------------------
+
+    word = str(
+        card.get(
+            "word",
+            ""
+        )
+    ).strip()
+
+    meaning = str(
+        card.get(
+            "meaning",
+            ""
+        )
+    ).strip()
+
+    part_of_speech = str(
+        card.get(
+            "part_of_speech",
+            ""
+        )
+    ).strip()
+
+    article = str(
+        card.get(
+            "article",
+            ""
+        )
+    ).strip()
+
+    gender = str(
+        card.get(
+            "gender",
+            ""
+        )
+    ).strip()
+
+    plural = str(
+        card.get(
+            "plural",
+            ""
+        )
+    ).strip()
+
+    target_sentence = str(
+        card.get(
+            "german_sentence",
+            ""
+        )
+    ).strip()
+
+    english_sentence = str(
+        card.get(
+            "english_sentence",
+            ""
+        )
+    ).strip()
+
+    if not word:
+        return jsonify({
+            "error": "The flashcard has no word."
+        }), 400
+
+    try:
+
+        # -------------------------------------------------
+        # CREATE ANKI MODEL
+        # -------------------------------------------------
+
+        model = genanki.Model(
+            1607392319,
+            "AI Flashcards Basic Model",
+            fields=[
+                {
+                    "name": "Front"
+                },
+                {
+                    "name": "Back"
+                }
+            ],
+            templates=[
+                {
+                    "name": "Card 1",
+                    "qfmt": "{{Front}}",
+                    "afmt": "{{FrontSide}}<hr id='answer'>{{Back}}"
+                }
+            ],
+            css="""
+.card {
+    font-family: Arial, sans-serif;
+    font-size: 20px;
+    text-align: center;
+    color: #ffffff;
+    background-color: #2f2f2f;
+    padding: 20px;
+}
+
+.card b {
+    font-weight: bold;
+}
+
+.card hr {
+    border: 0;
+    border-top: 1px solid #555555;
+    margin: 20px 0;
+}
+"""
+        )
+
+        # -------------------------------------------------
+        # BUILD BACK OF CARD
+        # -------------------------------------------------
+
+        word_html = escape(word)
+        meaning_html = escape(meaning)
+        part_html = escape(part_of_speech)
+        article_html = escape(article)
+        gender_html = escape(gender)
+        plural_html = escape(plural)
+        target_sentence_html = escape(target_sentence)
+        english_sentence_html = escape(english_sentence)
+
+        back = f"""
+<div>
+
+<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
+{word_html}
+</div>
+
+<b>Meaning:</b>
+{meaning_html}
+
+<br><br>
+
+<b>Part of speech:</b>
+{part_html}
+
+<br><br>
+
+<b>Article:</b>
+{article_html}
+
+<br>
+
+<b>Gender:</b>
+{gender_html}
+
+<br>
+
+<b>Plural:</b>
+{plural_html}
+
+<br><br>
+
+<b>{escape(language)} sentence:</b>
+
+<br>
+
+{target_sentence_html}
+
+<br><br>
+
+<b>English sentence:</b>
+
+<br>
+
+{english_sentence_html}
+
+</div>
+"""
+
+        # -------------------------------------------------
+        # CREATE NOTE
+        # -------------------------------------------------
+
+        note = genanki.Note(
+            model=model,
+            fields=[
+                word_html,
+                back
+            ]
+        )
+
+        # -------------------------------------------------
+        # CREATE DECK
+        # -------------------------------------------------
+        #
+        # Python's built-in hash() is randomized per-process, so
+        # using it here would generate a different deck ID every
+        # time the app restarts, causing duplicate decks in Anki
+        # instead of merging into the same one. A stable hash
+        # (md5) keeps the same language always mapping to the
+        # same deck ID across restarts.
+
+        deck_id = (
+            int(
+                hashlib.md5(
+                    f"AI Flashcards {language}".encode("utf-8")
+                ).hexdigest(),
+                16
+            ) % 9000000000
+        ) + 1000000000
+
+        deck = genanki.Deck(
+            deck_id,
+            f"AI Flashcards - {language}"
+        )
+
+        deck.add_note(note)
+
+        # -------------------------------------------------
+        # CREATE PACKAGE
+        # -------------------------------------------------
+
+        package = genanki.Package(
+            deck
+        )
+
+        # -------------------------------------------------
+        # GENERATE AUDIO
+        # -------------------------------------------------
+
+        pronunciation_file = None
+
+        try:
+
+            pronunciation_file = create_pronunciation_file(
+                word,
+                language
+            )
+
+        except Exception:
+
+            pronunciation_file = None
+
+        # -------------------------------------------------
+        # ADD AUDIO IF AVAILABLE
+        # -------------------------------------------------
+
+        if pronunciation_file:
+
+            package.media_files.append(
+                pronunciation_file
+            )
+
+            back_with_audio = (
+                back
+                +
+                "<br><br>"
+                +
+                "<b>🔊 Pronunciation:</b>"
+                +
+                "<br>"
+                +
+                f"[sound:{os.path.basename(pronunciation_file)}]"
+            )
+
+            note.fields[1] = back_with_audio
+
+        # -------------------------------------------------
+        # WRITE PACKAGE TO MEMORY
+        # -------------------------------------------------
+
+        package_bytes = io.BytesIO()
+
+        # genanki expects a file path, so create a uniquely-named
+        # temporary .apkg file first (unique per request, so two
+        # concurrent downloads can never collide on disk).
+
+        temp_apkg = os.path.join(
+            tempfile.gettempdir(),
+            f"ai_flashcard_download_{uuid.uuid4().hex}.apkg"
+        )
+
+        package.write_to_file(
+            temp_apkg
+        )
+
+        with open(
+            temp_apkg,
+            "rb"
+        ) as package_file:
+
+            package_bytes.write(
+                package_file.read()
+            )
+
+        package_bytes.seek(0)
+
+        # -------------------------------------------------
+        # CLEAN TEMPORARY FILES
+        # -------------------------------------------------
+
+        if os.path.exists(temp_apkg):
+
+            try:
+
+                os.remove(
+                    temp_apkg
+                )
+
+            except OSError:
+
+                pass
+
+        if pronunciation_file and os.path.exists(pronunciation_file):
+
+            try:
+
+                os.remove(
+                    pronunciation_file
+                )
+
+            except OSError:
+
+                pass
+
+        safe_word = re.sub(
+            r"[^a-zA-Z0-9_-]",
+            "_",
+            word
+        )
+
+        filename = (
+            f"AI_Flashcard_{safe_word}.apkg"
+        )
+
+        return send_file(
+            package_bytes,
+            mimetype="application/octet-stream",
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+
+        return jsonify({
+            "error":
+                f"Could not create Anki package: {str(e)}"
         }), 500
 
 
