@@ -1,0 +1,6 @@
+Flask
+requests
+google-genai
+gTTS
+gunicorn
+python-dotenv
