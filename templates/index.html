@@ -1716,9 +1716,13 @@ document
 
             try {
 
+                // -------------------------------------------------
+                // Ask AnkiConnect to create the deck locally.
+                // -------------------------------------------------
+
                 const response =
                     await fetch(
-                        "/create-deck",
+                        "http://127.0.0.1:8765",
                         {
                             method: "POST",
 
@@ -1728,39 +1732,41 @@ document
                             },
 
                             body: JSON.stringify({
-                                deck_name:
-                                    cleanDeckName
+                                action: "createDeck",
+                                version: 6,
+
+                                params: {
+                                    deck:
+                                        cleanDeckName
+                                }
                             })
                         }
                     );
 
 
-                let data;
-
-
-                try {
-
-                    data =
-                        await response.json();
-
-                } catch (error) {
+                if (!response.ok) {
 
                     throw new Error(
-                        "The server returned an invalid response."
+                        "AnkiConnect is not available."
                     );
-
                 }
 
 
-                if (!response.ok || data.error) {
+                const data =
+                    await response.json();
+
+
+                if (data.error) {
 
                     throw new Error(
-                        data.error ||
-                        "Could not create deck."
+                        data.error
                     );
-
                 }
 
+
+                // -------------------------------------------------
+                // Reload the user's local decks.
+                // -------------------------------------------------
 
                 await loadDecks();
 
@@ -1780,11 +1786,18 @@ document
 
             } catch (error) {
 
+                console.error(
+                    "Create deck error:",
+                    error
+                );
+
+
                 showMessage(
                     "Could not create deck: " +
                     error.message,
                     "error"
                 );
+
 
             } finally {
 
@@ -1799,7 +1812,6 @@ document
 
         }
     );
-
 
 /* =====================================================
    GENERATE FLASHCARD
@@ -2224,11 +2236,212 @@ document
                 "Adding...";
 
 
+            hideMessage();
+
+
             try {
+
+                // -------------------------------------------------
+                // ADD NOTE DIRECTLY TO THE USER'S ANKI CONNECT
+                // -------------------------------------------------
+
+                const word =
+                    currentCard.word || "";
+
+
+                const meaning =
+                    currentCard.meaning || "";
+
+
+                const partOfSpeech =
+                    currentCard.part_of_speech || "";
+
+
+                const article =
+                    currentCard.article || "";
+
+
+                const gender =
+                    currentCard.gender || "";
+
+
+                const plural =
+                    currentCard.plural || "";
+
+
+                const targetSentence =
+                    currentCard.german_sentence || "";
+
+
+                const englishSentence =
+                    currentCard.english_sentence || "";
+
+
+                // Escape HTML so generated card content is safe.
+                function escapeHtml(value) {
+
+                    return String(value)
+                        .replace(/&/g, "&amp;")
+                        .replace(/</g, "&lt;")
+                        .replace(/>/g, "&gt;")
+                        .replace(/"/g, "&quot;")
+                        .replace(/'/g, "&#039;");
+                }
+
+
+                const wordHtml =
+                    escapeHtml(word);
+
+
+                const meaningHtml =
+                    escapeHtml(meaning);
+
+
+                const partHtml =
+                    escapeHtml(partOfSpeech);
+
+
+                const articleHtml =
+                    escapeHtml(article);
+
+
+                const genderHtml =
+                    escapeHtml(gender);
+
+
+                const pluralHtml =
+                    escapeHtml(plural);
+
+
+                const targetSentenceHtml =
+                    escapeHtml(targetSentence);
+
+
+                const englishSentenceHtml =
+                    escapeHtml(englishSentence);
+
+// -------------------------------------------------
+// Generate pronunciation audio from the Flask server.
+// -------------------------------------------------
+
+let audioData = null;
+let audioFilename = null;
+
+try {
+
+    const audioResponse =
+        await fetch(
+            "/pronunciation-audio",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    word:
+                        word,
+
+                    language:
+                        language
+
+                })
+            }
+        );
+
+
+    if (audioResponse.ok) {
+
+        const audioResult =
+            await audioResponse.json();
+            console.log("AUDIO RESULT:", audioResult);
+
+
+        if (
+            audioResult.success &&
+            audioResult.data &&
+            audioResult.filename
+        ) {
+
+            audioData =
+                audioResult.data;
+
+            audioFilename =
+                audioResult.filename;
+        }
+
+    }
+
+} catch (audioError) {
+
+    console.warn(
+        "Pronunciation audio could not be generated:",
+        audioError
+    );
+
+}
+
+
+                const back = `
+<div>
+
+<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
+${wordHtml}
+</div>
+
+<b>Meaning:</b>
+${meaningHtml}
+
+<br><br>
+
+<b>Part of speech:</b>
+${partHtml}
+
+<br><br>
+
+<b>Article:</b>
+${articleHtml}
+
+<br>
+
+<b>Gender:</b>
+${genderHtml}
+
+<br>
+
+<b>Plural:</b>
+${pluralHtml}
+
+<br><br>
+
+<b>${escapeHtml(language)} sentence:</b>
+
+<br>
+
+${targetSentenceHtml}
+
+<br><br>
+
+<b>English sentence:</b>
+
+<br>
+
+${englishSentenceHtml}
+
+</div>
+`;
+
+
+                // -------------------------------------------------
+                // CREATE NOTE DIRECTLY IN LOCAL ANKI
+                // -------------------------------------------------
 
                 const response =
                     await fetch(
-                        "/add-to-anki",
+                        "http://127.0.0.1:8765",
                         {
                             method: "POST",
 
@@ -2239,44 +2452,102 @@ document
 
                             body: JSON.stringify({
 
-                                deck:
-                                    deck,
+                                action:
+                                    "addNote",
 
-                                language:
-                                    language,
+                                version:
+                                    6,
 
-                                card:
-                                    currentCard
+                                params: {
+
+                                    note: {
+
+                                        deckName:
+                                            deck,
+
+                                        modelName:
+                                            "Basic",
+
+                                        fields: {
+
+                                            Front:
+                                                wordHtml,
+
+                                            Back:
+                                                back
+                                        },
+
+                                        options: {
+
+                                            allowDuplicate:
+                                                false
+                                        },
+
+                                        tags: [
+
+                                            "ai-flashcards",
+
+                                            "language-" +
+                                                language
+                                                    .toLowerCase()
+                                                    .replace(
+                                                        /[^a-z0-9_-]/g,
+                                                        "-"
+                                                    )
+
+                                        ],
+
+                                        audio:
+    audioData
+        ? [
+            {
+                filename:
+                    audioFilename,
+
+                data:
+                    audioData,
+
+                fields: [
+                    "Back"
+                ]
+            }
+        ]
+        : []
+
+                                    }
+
+                                }
 
                             })
                         }
                     );
 
 
-                let data;
-
-
-                try {
-
-                    data =
-                        await response.json();
-
-                } catch (error) {
+                if (!response.ok) {
 
                     throw new Error(
-                        "The server returned an invalid response."
+                        "AnkiConnect is not available."
                     );
-
                 }
 
 
-                if (!response.ok || data.error) {
+                const data =
+                    await response.json();
+
+
+                if (data.error) {
 
                     throw new Error(
-                        data.error ||
-                        "Could not add the flashcard to Anki."
+                        data.error
                     );
+                }
 
+
+                if (!data.result) {
+
+                    throw new Error(
+                        "Anki did not return a note ID."
+                    );
                 }
 
 
@@ -2289,7 +2560,7 @@ document
 
 
                 showMessage(
-                    "✓ Flashcard + pronunciation added to Anki!",
+                    "✓ Flashcard added to Anki!",
                     "success"
                 );
 

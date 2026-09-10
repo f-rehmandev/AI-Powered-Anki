@@ -520,7 +520,7 @@ Rules:
     try:
 
         response = client.models.generate_content(
-            model="gemini-3.6-flash",
+            model="gemini-3.5-flash-lite",
             contents=prompt
         )
 
@@ -726,6 +726,161 @@ def create_pronunciation(word, language):
             except OSError:
 
                 pass
+
+
+# =========================================================
+# GENERATE PRONUNCIATION AUDIO FOR BROWSER
+# =========================================================
+
+@app.route("/pronunciation-audio", methods=["POST"])
+def pronunciation_audio():
+
+    data = request.get_json()
+
+    if not data:
+        return jsonify({
+            "error": "No pronunciation data received."
+        }), 400
+
+    word = str(
+        data.get(
+            "word",
+            ""
+        )
+    ).strip()
+
+    language = str(
+        data.get(
+            "language",
+            ""
+        )
+    ).strip()
+
+    if not word:
+        return jsonify({
+            "error": "No word was provided."
+        }), 400
+
+    if not language:
+        return jsonify({
+            "error": "No language was selected."
+        }), 400
+
+    try:
+
+        language_code = get_language_code(
+            language
+        )
+
+        if not language_code:
+
+            return jsonify({
+                "error":
+                    f"Pronunciation is not currently available for {language}."
+            }), 400
+
+
+        # -------------------------------------------------
+        # Create a safe filename
+        # -------------------------------------------------
+
+        safe_word = re.sub(
+            r"[^a-zA-Z0-9äöüÄÖÜß_-]",
+            "_",
+            word
+        )
+
+        safe_language = re.sub(
+            r"[^a-zA-Z0-9_-]",
+            "_",
+            language.lower()
+        )
+
+        filename = (
+            f"{safe_language}_{safe_word}.mp3"
+        )
+
+
+        # -------------------------------------------------
+        # Create unique temporary MP3
+        # -------------------------------------------------
+
+        temp_path = os.path.join(
+            tempfile.gettempdir(),
+            f"{uuid.uuid4().hex}_{filename}"
+        )
+
+
+        try:
+
+            # -------------------------------------------------
+            # Generate pronunciation
+            # -------------------------------------------------
+
+            tts = gTTS(
+                text=word,
+                lang=language_code,
+                slow=False
+            )
+
+            tts.save(
+                temp_path
+            )
+
+
+            # -------------------------------------------------
+            # Convert MP3 to Base64
+            # -------------------------------------------------
+
+            with open(
+                temp_path,
+                "rb"
+            ) as audio_file:
+
+                audio_base64 = base64.b64encode(
+                    audio_file.read()
+                ).decode("utf-8")
+
+
+            return jsonify({
+
+                "success":
+                    True,
+
+                "filename":
+                    filename,
+
+                "data":
+                    audio_base64
+
+            })
+
+
+        finally:
+
+            # Remove temporary MP3.
+
+            if os.path.exists(temp_path):
+
+                try:
+
+                    os.remove(
+                        temp_path
+                    )
+
+                except OSError:
+
+                    pass
+
+
+    except Exception as e:
+
+        return jsonify({
+
+            "error":
+                f"Could not generate pronunciation: {str(e)}"
+
+        }), 500
 
 # =========================================================
 # CREATE PRONUNCIATION FILE FOR ANKI PACKAGE
