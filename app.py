@@ -125,30 +125,7 @@ def get_language_code(language):
 
 @app.route("/")
 def home():
-
-    try:
-
-        result = anki_request("deckNames")
-
-        if result.get("error"):
-
-            decks = []
-
-        else:
-
-            decks = result.get(
-                "result",
-                []
-            )
-
-    except Exception:
-
-        decks = []
-
-    return render_template(
-        "index.html",
-        decks=decks
-    )
+    return render_template("index.html")
 
 
 # =========================================================
