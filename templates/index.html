@@ -2586,6 +2586,111 @@ document
 
             try {
 
+
+                // -------------------------------------------------
+// CHECK FOR DUPLICATE
+// -------------------------------------------------
+
+let allowDuplicate = false;
+
+try {
+
+    const duplicateCheckResponse =
+        await fetch(
+            "/check-duplicate",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    deck:
+                        deck,
+
+                    word:
+                        currentCard.word
+
+                })
+            }
+        );
+
+
+    const duplicateData =
+        await duplicateCheckResponse.json();
+
+
+    if (
+        duplicateData.duplicate
+    ) {
+
+        const duplicateLocation =
+    duplicateData.deck
+        ? `\n\nExisting deck: ${duplicateData.deck}`
+        : "";
+
+let duplicateMessage = "";
+
+if (
+    duplicateData.deck &&
+    duplicateData.deck === deck
+) {
+
+    duplicateMessage =
+        `"${duplicateData.word}" is already in your selected Anki deck.\n\n` +
+        `Do you still want to add this card?`;
+
+} else if (
+    duplicateData.deck
+) {
+
+    duplicateMessage =
+        `"${duplicateData.word}" is already in the Anki deck "${duplicateData.deck}".\n\n` +
+        `Do you still want to add this card?`;
+
+} else {
+
+    duplicateMessage =
+        `"${duplicateData.word}" already exists in your Anki collection.\n\n` +
+        `Do you still want to add this card?`;
+}
+
+
+const addAnyway =
+    confirm(
+        duplicateMessage
+    );
+
+
+        if (!addAnyway) {
+
+            button.disabled =
+                false;
+
+            button.textContent =
+                "＋ Add to Anki";
+
+            return;
+        }
+
+
+        allowDuplicate =
+            true;
+
+    }
+
+} catch (duplicateError) {
+
+    console.warn(
+        "Duplicate check failed:",
+        duplicateError
+    );
+
+}
+
                 // -------------------------------------------------
                 // ADD NOTE DIRECTLY TO THE USER'S ANKI CONNECT
                 // -------------------------------------------------
@@ -2914,11 +3019,11 @@ ${sentenceAudioFilename
                                                 back
                                         },
 
-                                        options: {
+                                       options: {
 
-                                            allowDuplicate:
-                                                false
-                                        },
+    allowDuplicate:
+        allowDuplicate
+},
 
                                         tags: [
 

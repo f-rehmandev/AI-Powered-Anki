@@ -916,6 +916,306 @@ def create_pronunciation_file(word, language):
 
     return temp_path
 
+
+# =========================================================
+# CHECK FOR DUPLICATE WORD IN ANKI
+# =========================================================
+
+def find_duplicate_word(deck, word):
+
+    if not word:
+        return None
+
+
+    # -----------------------------------------------------
+    # SEARCH THE ENTIRE ANKI COLLECTION
+    # -----------------------------------------------------
+
+    safe_word = str(
+        word
+    ).replace(
+        '"',
+        '\\"'
+    )
+
+
+    result = anki_request(
+        "findNotes",
+        {
+            "query": f'front:"{safe_word}"'
+        }
+    )
+
+
+    if result.get("error"):
+
+        raise Exception(
+            result["error"]
+        )
+
+
+    note_ids = result.get(
+        "result",
+        []
+    )
+
+
+    if not note_ids:
+
+        return None
+
+
+    # -----------------------------------------------------
+    # GET NOTE INFORMATION
+    # -----------------------------------------------------
+
+    notes_result = anki_request(
+        "notesInfo",
+        {
+            "notes": note_ids
+        }
+    )
+
+
+    if notes_result.get("error"):
+
+        raise Exception(
+            notes_result["error"]
+        )
+
+
+    notes = notes_result.get(
+        "result",
+        []
+    )
+
+
+    target_word = (
+        str(word)
+        .strip()
+        .casefold()
+    )
+
+
+    selected_deck_duplicate = None
+    other_deck_duplicate = None
+
+
+    # -----------------------------------------------------
+    # CHECK EACH MATCH
+    # -----------------------------------------------------
+
+    for note in notes:
+
+        fields = note.get(
+            "fields",
+            {}
+        )
+
+
+        front_field = fields.get(
+            "Front"
+        )
+
+
+        if not front_field:
+
+            continue
+
+
+        existing_word = str(
+            front_field.get(
+                "value",
+                ""
+            )
+        ).strip()
+
+
+        # Remove HTML formatting.
+        existing_word = re.sub(
+            r"<[^>]*>",
+            "",
+            existing_word
+        ).strip()
+
+
+        # Compare case-insensitively.
+        if existing_word.casefold() != target_word:
+
+            continue
+
+
+        # -------------------------------------------------
+        # FIND THE DECK
+        # -------------------------------------------------
+
+        card_ids = note.get(
+            "cards",
+            []
+        )
+
+
+        existing_deck = None
+
+
+        if card_ids:
+
+            card_info_result = anki_request(
+                "cardsInfo",
+                {
+                    "cards": card_ids
+                }
+            )
+
+
+            if not card_info_result.get("error"):
+
+                card_info = card_info_result.get(
+                    "result",
+                    []
+                )
+
+
+                if card_info:
+
+                    existing_deck = card_info[0].get(
+                        "deckName"
+                    )
+
+
+        duplicate_info = {
+            "note_id": note.get(
+                "noteId"
+            ),
+
+            "word": existing_word,
+
+            "deck": existing_deck
+        }
+
+
+        # -------------------------------------------------
+        # PRIORITIZE SELECTED DECK
+        # -------------------------------------------------
+
+        if existing_deck == deck:
+
+            selected_deck_duplicate = duplicate_info
+
+            break
+
+
+        # Keep the first matching card from another deck
+        # as a fallback.
+        if other_deck_duplicate is None:
+
+            other_deck_duplicate = duplicate_info
+
+
+    # -----------------------------------------------------
+    # RETURN SELECTED-DECK MATCH FIRST
+    # -----------------------------------------------------
+
+    if selected_deck_duplicate:
+
+        return selected_deck_duplicate
+
+
+    if other_deck_duplicate:
+
+        return other_deck_duplicate
+
+
+    return None
+
+
+
+# =========================================================
+# CHECK DUPLICATE FROM WEBSITE
+# =========================================================
+
+@app.route("/check-duplicate", methods=["POST"])
+def check_duplicate():
+
+    data = request.get_json()
+
+    if not data:
+
+        return jsonify({
+            "error": "No duplicate-check data received."
+        }), 400
+
+
+    deck = str(
+        data.get(
+            "deck",
+            ""
+        )
+    ).strip()
+
+
+    word = str(
+        data.get(
+            "word",
+            ""
+        )
+    ).strip()
+
+
+    if not deck:
+
+        return jsonify({
+            "error": "No Anki deck was selected."
+        }), 400
+
+
+    if not word:
+
+        return jsonify({
+            "error": "No word was provided."
+        }), 400
+
+
+    try:
+
+        duplicate = find_duplicate_word(
+            deck,
+            word
+        )
+
+
+        if duplicate:
+            return jsonify({
+
+        "duplicate": True,
+
+        "word":
+            duplicate["word"],
+
+        "note_id":
+            duplicate["note_id"],
+
+        "deck":
+            duplicate["deck"]
+
+    })
+
+        return jsonify({
+
+            "duplicate": False
+
+        })
+
+
+    except Exception as e:
+
+        return jsonify({
+
+            "error":
+                f"Could not check for duplicates: {str(e)}"
+
+        }), 500
+
 # =========================================================
 # ADD FLASHCARD TO ANKI
 # =========================================================
@@ -1329,6 +1629,7 @@ def add_to_anki():
                 f"Could not add the flashcard to Anki: {str(e)}"
 
         }), 500
+
 
 # =========================================================
 # DOWNLOAD FLASHCARD AS ANKI PACKAGE
