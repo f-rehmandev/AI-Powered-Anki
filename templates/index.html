@@ -781,6 +781,249 @@
         }
 
 
+/* =========================
+   INSTRUCTIONS BUTTON + MODAL
+========================= */
+
+.modal-overlay {
+
+    display: none;
+
+    position: fixed;
+
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+
+    background: rgba(31, 52, 77, 0.55);
+
+    z-index: 1000;
+
+    align-items: center;
+
+    justify-content: center;
+
+    padding: 20px;
+}
+
+
+.modal-overlay.open {
+
+    display: flex;
+}
+
+
+.modal-box {
+
+    background:
+        linear-gradient(
+            160deg,
+            #eef6fc,
+            #dce9f4
+        );
+
+    border:
+        1px solid #bcd7ea;
+
+    border-radius: 20px;
+
+    max-width: 640px;
+
+    width: 100%;
+
+    max-height: 85vh;
+
+    overflow-y: auto;
+
+    padding: 34px 34px 30px;
+
+    position: relative;
+
+    box-shadow:
+        0 25px 60px rgba(20, 50, 80, 0.35);
+}
+
+
+.modal-close {
+
+    position: absolute;
+
+    top: 16px;
+
+    right: 16px;
+
+    width: 30px;
+
+    height: 30px;
+
+    border: none;
+
+    border-radius: 50%;
+
+    background: #f3b6bb;
+
+    color: #7a1f26;
+
+    font-size: 16px;
+
+    font-weight: 700;
+
+    cursor: pointer;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: center;
+
+    transition: 0.2s;
+}
+
+
+.modal-close:hover {
+
+    background: #ee8f97;
+
+    transform: scale(1.08);
+}
+
+
+.modal-box h3 {
+
+    font-size: 22px;
+
+    color: #1c3654;
+
+    margin-bottom: 6px;
+
+    padding-right: 30px;
+}
+
+
+.modal-intro {
+
+    font-size: 15px;
+
+    color: #3a5773;
+
+    margin-bottom: 22px;
+}
+
+
+.modal-option {
+
+    background: rgba(255, 255, 255, 0.6);
+
+    border: 1px solid #cfe1ef;
+
+    border-radius: 14px;
+
+    padding: 18px 20px;
+
+    margin-bottom: 18px;
+}
+
+
+.modal-option:last-child {
+
+    margin-bottom: 0;
+}
+
+
+.modal-option-title {
+
+    display: flex;
+
+    align-items: center;
+
+    gap: 10px;
+
+    margin-bottom: 10px;
+}
+
+
+.modal-option-title h4 {
+
+    font-size: 16px;
+
+    color: #1c3654;
+}
+
+
+.modal-badge {
+
+    background: #cfe6f7;
+
+    border: 1px solid #a9d3ef;
+
+    color: #227ec2;
+
+    padding: 3px 10px;
+
+    border-radius: 20px;
+
+    font-size: 11px;
+
+    font-weight: 700;
+}
+
+
+.modal-option ol {
+
+    padding-left: 20px;
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 9px;
+}
+
+
+.modal-option li {
+
+    font-size: 14px;
+
+    line-height: 1.55;
+
+    color: #33526e;
+}
+
+
+.modal-option li b {
+
+    color: #1662a8;
+}
+
+
+.modal-note {
+
+    margin-top: 12px;
+
+    font-size: 13px;
+
+    color: #5c7690;
+
+    background: #f5f9fc;
+
+    border-left: 3px solid #4bb2ee;
+
+    padding: 9px 12px;
+
+    border-radius: 6px;
+}
+
+
+@media (max-width: 600px) {
+
+    .modal-box {
+
+        padding: 26px 20px 24px;
+    }
+
+}
+
         /* =========================
            MESSAGE
         ========================= */
@@ -1412,6 +1655,18 @@
                     class="new-card-button"
                 >
                     ↻ Generate New Card
+
+                    </button>
+
+
+<button
+    type="button"
+    id="instructionsButton"
+    class="new-card-button"
+>
+    📖 Instructions
+</button>
+
                 </button>
 
             </div>
@@ -1425,6 +1680,76 @@
 </main>
 
 
+
+
+<!-- =========================
+     INSTRUCTIONS MODAL
+========================= -->
+
+<div id="instructionsModal" class="modal-overlay">
+
+    <div class="modal-box">
+
+        <button
+            type="button"
+            id="closeInstructionsButton"
+            class="modal-close"
+            aria-label="Close instructions"
+        >
+            ✕
+        </button>
+
+        <h3>How to get your flashcards into Anki</h3>
+
+        <p class="modal-intro">
+            You have <b>2 options</b> — pick whichever works best for you.
+        </p>
+
+
+        <div class="modal-option">
+
+            <div class="modal-option-title">
+                <h4>Option 1 — Download the flashcard manually</h4>
+            </div>
+
+            <ol>
+                <li>Click <b>Download Flashcard</b> — the file will be saved to your computer's <b>Downloads</b> folder.</li>
+                <li>Open your Downloads folder and <b>double-click the downloaded file</b> — it will open automatically in Anki.</li>
+                <li>Click <b>Import</b>.</li>
+                <li>The card will land in its <b>own separate deck</b>, not the deck you normally study — this is expected.</li>
+                <li>To move it into your preferred deck: click that deck on Anki's main screen (before clicking "Study Now") → click <b>Browse</b> → click the card once to select it → click <b>Change Deck</b> (or press <b>Ctrl + D</b>) → choose your preferred deck → click <b>Move Cards</b>.</li>
+            </ol>
+
+        </div>
+
+
+        <div class="modal-option">
+
+            <div class="modal-option-title">
+                <h4>Option 2 — Connect this website directly to Anki</h4>
+                <span class="modal-badge">Recommended</span>
+            </div>
+
+            <ol>
+    <li>Open the <b>Anki desktop app</b> (not AnkiWeb) → click <b>Tools</b> in the top menu → click <b>Add-ons</b>.</li>
+    <li>Click <b>Get Add-ons...</b> in the top right → a box will appear → enter this code: <b>2055492159</b> → click <b>OK</b>.</li>
+    <li>Wait a few seconds — <b>AnkiConnect</b> will download and appear in your add-ons list. Then <b>restart Anki</b>.</li>
+    <li>Come back to this website and <b>reload the page</b> while Anki is open in the background.</li>
+    <li>A prompt will appear in the top left corner asking to send notifications — make sure to click <b>Allow</b>.</li>
+    <li>If you previously blocked notifications, click the <b>settings icon</b> (sliders or a padlock) right before to the website address in your browser's search bar, and enable the <b>'Apps on device'</b> option.</li>
+    <li>A pop-up will appear (either in your browser or inside the Anki window) asking for permission to link with the website — click <b>Yes</b>.</li>
+    <li>You'll then see a <b>"Connected to Anki"</b> with green indicator at the top of this page, and you can use <b>Add to Anki</b> and <b>Create New Deck</b> directly from now on.</li>
+</ol>
+
+            <div class="modal-note">
+                Anki must be <b>open and running</b> on your computer for this to work, and it only works in Chrome, Edge, or Firefox (not Safari).
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
 
 <script>
 
@@ -3009,6 +3334,77 @@ document.addEventListener(
     function() {
 
         loadDecks();
+
+    }
+);
+
+
+
+/* =====================================================
+   INSTRUCTIONS MODAL
+===================================================== */
+
+document
+    .getElementById("instructionsButton")
+    .addEventListener(
+        "click",
+        function() {
+
+            document
+                .getElementById("instructionsModal")
+                .classList
+                .add("open");
+
+        }
+    );
+
+
+document
+    .getElementById("closeInstructionsButton")
+    .addEventListener(
+        "click",
+        function() {
+
+            document
+                .getElementById("instructionsModal")
+                .classList
+                .remove("open");
+
+        }
+    );
+
+
+document
+    .getElementById("instructionsModal")
+    .addEventListener(
+        "click",
+        function(event) {
+
+            if (event.target.id === "instructionsModal") {
+
+                document
+                    .getElementById("instructionsModal")
+                    .classList
+                    .remove("open");
+
+            }
+
+        }
+    );
+
+
+document.addEventListener(
+    "keydown",
+    function(event) {
+
+        if (event.key === "Escape") {
+
+            document
+                .getElementById("instructionsModal")
+                .classList
+                .remove("open");
+
+        }
 
     }
 );
