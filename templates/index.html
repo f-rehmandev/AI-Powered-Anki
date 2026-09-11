@@ -496,7 +496,21 @@
             margin-bottom: 25px;
         }
 
+.word-header-left {
 
+    display: flex;
+
+    align-items: center;
+
+    gap: 14px;
+}
+
+.header-pronounce-button {
+
+    margin-top: 0;
+
+    flex-shrink: 0;
+}
         .word-header h4 {
 
             font-size: 27px;
@@ -1448,17 +1462,28 @@
 
             <div class="flashcard">
 
+<div class="word-header">
 
-                <div class="word-header">
+    <div class="word-header-left">
 
-                    <h4 id="cardWord"></h4>
+        <h4 id="cardWord"></h4>
 
-                    <span
-                        id="cardPartOfSpeech"
-                        class="part-badge"
-                    ></span>
+        <span
+            id="cardPartOfSpeech"
+            class="part-badge"
+        ></span>
 
-                </div>
+    </div>
+
+    <button
+        type="button"
+        id="pronounceButton"
+        class="pronounce-button header-pronounce-button"
+    >
+        🔊 Pronounce Word
+    </button>
+
+</div>
 
 
 
@@ -1573,6 +1598,15 @@
                             id="cardGermanSentence"
                             class="sentence-text"
                         ></div>
+                        
+                        <button
+                            type="button"
+                            id="pronounceSentenceButton"
+                            class="pronounce-button"
+                            style="margin-top: 10px;"
+                        >
+                            🔊 Pronounce Sentence
+                        </button>
 
                     </div>
 
@@ -1595,18 +1629,6 @@
 
 
                 </div>
-
-
-
-                <!-- PRONUNCIATION -->
-
-                <button
-                    type="button"
-                    id="pronounceButton"
-                    class="pronounce-button"
-                >
-                    🔊 Pronounce Word
-                </button>
 
 
             </div>
@@ -1666,8 +1688,6 @@
 >
     📖 Instructions
 </button>
-
-                </button>
 
             </div>
 
@@ -2646,15 +2666,15 @@ document
                     escapeHtml(englishSentence);
 
 // -------------------------------------------------
-// Generate pronunciation audio from the Flask server.
+// Generate pronunciation audio for the word
 // -------------------------------------------------
 
-let audioData = null;
-let audioFilename = null;
+let wordAudioData = null;
+let wordAudioFilename = null;
 
 try {
 
-    const audioResponse =
+    const wordAudioResponse =
         await fetch(
             "/pronunciation-audio",
             {
@@ -2667,7 +2687,7 @@ try {
 
                 body: JSON.stringify({
 
-                    word:
+                    text:
                         word,
 
                     language:
@@ -2678,24 +2698,28 @@ try {
         );
 
 
-    if (audioResponse.ok) {
+    if (wordAudioResponse.ok) {
 
-        const audioResult =
-            await audioResponse.json();
-            console.log("AUDIO RESULT:", audioResult);
+        const wordAudioResult =
+            await wordAudioResponse.json();
+
+        console.log(
+            "WORD AUDIO RESULT:",
+            wordAudioResult
+        );
 
 
         if (
-            audioResult.success &&
-            audioResult.data &&
-            audioResult.filename
+            wordAudioResult.success &&
+            wordAudioResult.data &&
+            wordAudioResult.filename
         ) {
 
-            audioData =
-                audioResult.data;
+            wordAudioData =
+                wordAudioResult.data;
 
-            audioFilename =
-                audioResult.filename;
+            wordAudioFilename =
+                wordAudioResult.filename;
         }
 
     }
@@ -2703,12 +2727,80 @@ try {
 } catch (audioError) {
 
     console.warn(
-        "Pronunciation audio could not be generated:",
+        "Word pronunciation audio could not be generated:",
         audioError
     );
 
 }
 
+
+// -------------------------------------------------
+// Generate pronunciation audio for the sentence
+// -------------------------------------------------
+
+let sentenceAudioData = null;
+let sentenceAudioFilename = null;
+
+try {
+
+    const sentenceAudioResponse =
+        await fetch(
+            "/pronunciation-audio",
+            {
+                method: "POST",
+
+                headers: {
+                    "Content-Type":
+                        "application/json"
+                },
+
+                body: JSON.stringify({
+
+                    text:
+                        targetSentence,
+
+                    language:
+                        language
+
+                })
+            }
+        );
+
+
+    if (sentenceAudioResponse.ok) {
+
+        const sentenceAudioResult =
+            await sentenceAudioResponse.json();
+
+        console.log(
+            "SENTENCE AUDIO RESULT:",
+            sentenceAudioResult
+        );
+
+
+        if (
+            sentenceAudioResult.success &&
+            sentenceAudioResult.data &&
+            sentenceAudioResult.filename
+        ) {
+
+            sentenceAudioData =
+                sentenceAudioResult.data;
+
+            sentenceAudioFilename =
+                sentenceAudioResult.filename;
+        }
+
+    }
+
+} catch (audioError) {
+
+    console.warn(
+        "Sentence pronunciation audio could not be generated:",
+        audioError
+    );
+
+}
 
                 const back = `
 <div>
@@ -2755,6 +2847,26 @@ ${targetSentenceHtml}
 <br>
 
 ${englishSentenceHtml}
+
+${wordAudioFilename
+    ? `
+<br><br>
+<b>🔊 Word Pronunciation:</b>
+<br>
+[sound:${wordAudioFilename}]
+`
+    : ""
+}
+
+${sentenceAudioFilename
+    ? `
+<br><br>
+<b>🔊 Sentence Pronunciation:</b>
+<br>
+[sound:${sentenceAudioFilename}]
+`
+    : ""
+}
 
 </div>
 `;
@@ -2822,23 +2934,39 @@ ${englishSentenceHtml}
 
                                         ],
 
-                                        audio:
-    audioData
+                                      audio: [
+
+    ...(wordAudioData
         ? [
             {
                 filename:
-                    audioFilename,
+                    wordAudioFilename,
 
                 data:
-                    audioData,
+                    wordAudioData,
 
-                fields: [
-                    "Back"
-                ]
+                fields: []
             }
         ]
         : []
+    ),
 
+    ...(sentenceAudioData
+        ? [
+            {
+                filename:
+                    sentenceAudioFilename,
+
+                data:
+                    sentenceAudioData,
+
+                fields: []
+            }
+        ]
+        : []
+    )
+
+]
                                     }
 
                                 }
@@ -3197,6 +3325,40 @@ document
 
             pronounceWord(
                 currentCard.word,
+                language
+            );
+
+        }
+    );
+
+
+/* =====================================================
+   SENTENCE PRONUNCIATION
+===================================================== */
+
+document
+    .getElementById("pronounceSentenceButton")
+    .addEventListener(
+        "click",
+        function() {
+
+            if (
+                !currentCard ||
+                !currentCard.german_sentence
+            ) {
+
+                return;
+            }
+
+
+            const language =
+                document
+                    .getElementById("language")
+                    .value;
+
+
+            pronounceWord(
+                currentCard.german_sentence,
                 language
             );
 

@@ -314,12 +314,11 @@ def generate():
         }), 400
 
     word = str(
-        data.get(
-            "word",
-            ""
-        )
-    ).strip()
-
+    data.get(
+        "word",
+        ""
+    )
+).strip()
     topic = str(
         data.get(
             "topic",
@@ -719,12 +718,12 @@ def pronunciation_audio():
             "error": "No pronunciation data received."
         }), 400
 
-    word = str(
-        data.get(
-            "word",
-            ""
-        )
-    ).strip()
+    text = str(
+    data.get(
+        "text",
+        data.get("word", "")
+    )
+).strip()
 
     language = str(
         data.get(
@@ -733,10 +732,10 @@ def pronunciation_audio():
         )
     ).strip()
 
-    if not word:
-        return jsonify({
-            "error": "No word was provided."
-        }), 400
+    if not text:
+       return jsonify({
+        "error": "No pronunciation text was provided."
+    }), 400
 
     if not language:
         return jsonify({
@@ -764,7 +763,7 @@ def pronunciation_audio():
         safe_word = re.sub(
             r"[^a-zA-Z0-9äöüÄÖÜß_-]",
             "_",
-            word
+            text
         )
 
         safe_language = re.sub(
@@ -795,9 +794,9 @@ def pronunciation_audio():
             # -------------------------------------------------
 
             tts = gTTS(
-                text=word,
+                text=text,
                 lang=language_code,
-                slow=False
+                slow=True
             )
 
             tts.save(
@@ -1346,6 +1345,7 @@ def download_flashcard():
         }), 400
 
     card = data.get("card")
+
     language = str(
         data.get(
             "language",
@@ -1479,13 +1479,34 @@ def download_flashcard():
         # -------------------------------------------------
 
         word_html = escape(word)
-        meaning_html = escape(meaning)
-        part_html = escape(part_of_speech)
-        article_html = escape(article)
-        gender_html = escape(gender)
-        plural_html = escape(plural)
-        target_sentence_html = escape(target_sentence)
-        english_sentence_html = escape(english_sentence)
+
+        meaning_html = escape(
+            meaning
+        )
+
+        part_html = escape(
+            part_of_speech
+        )
+
+        article_html = escape(
+            article
+        )
+
+        gender_html = escape(
+            gender
+        )
+
+        plural_html = escape(
+            plural
+        )
+
+        target_sentence_html = escape(
+            target_sentence
+        )
+
+        english_sentence_html = escape(
+            english_sentence
+        )
 
         back = f"""
 <div>
@@ -1551,13 +1572,6 @@ def download_flashcard():
         # -------------------------------------------------
         # CREATE DECK
         # -------------------------------------------------
-        #
-        # Python's built-in hash() is randomized per-process, so
-        # using it here would generate a different deck ID every
-        # time the app restarts, causing duplicate decks in Anki
-        # instead of merging into the same one. A stable hash
-        # (md5) keeps the same language always mapping to the
-        # same deck ID across restarts.
 
         deck_id = (
             int(
@@ -1573,7 +1587,9 @@ def download_flashcard():
             f"AI Flashcards - {language}"
         )
 
-        deck.add_note(note)
+        deck.add_note(
+            note
+        )
 
         # -------------------------------------------------
         # CREATE PACKAGE
@@ -1587,52 +1603,93 @@ def download_flashcard():
         # GENERATE AUDIO
         # -------------------------------------------------
 
-        pronunciation_file = None
+        word_pronunciation_file = None
+
+        sentence_pronunciation_file = None
+
+
+        # -------------------------------------------------
+        # WORD PRONUNCIATION
+        # -------------------------------------------------
 
         try:
 
-            pronunciation_file = create_pronunciation_file(
+            word_pronunciation_file = create_pronunciation_file(
                 word,
                 language
             )
 
-        except Exception:
+        except Exception as audio_error:
 
-            pronunciation_file = None
+            print(
+                "Word pronunciation could not be generated:",
+                audio_error
+            )
+
 
         # -------------------------------------------------
-        # ADD AUDIO IF AVAILABLE
+        # SENTENCE PRONUNCIATION
         # -------------------------------------------------
 
-        if pronunciation_file:
+        try:
+
+            sentence_pronunciation_file = create_pronunciation_file(
+                target_sentence,
+                language
+            )
+
+        except Exception as audio_error:
+
+            print(
+                "Sentence pronunciation could not be generated:",
+                audio_error
+            )
+
+
+        # -------------------------------------------------
+        # ADD AUDIO TO PACKAGE
+        # -------------------------------------------------
+
+        back_with_audio = back
+
+
+        if word_pronunciation_file:
 
             package.media_files.append(
-                pronunciation_file
+                word_pronunciation_file
             )
 
-            back_with_audio = (
-                back
-                +
+            back_with_audio += (
                 "<br><br>"
-                +
-                "<b>🔊 Pronunciation:</b>"
-                +
+                "<b>🔊 Word Pronunciation:</b>"
                 "<br>"
-                +
-                f"[sound:{os.path.basename(pronunciation_file)}]"
+                f"[sound:{os.path.basename(word_pronunciation_file)}]"
             )
 
-            note.fields[1] = back_with_audio
+
+        if sentence_pronunciation_file:
+
+            package.media_files.append(
+                sentence_pronunciation_file
+            )
+
+            back_with_audio += (
+                "<br><br>"
+                "<b>🔊 Sentence Pronunciation:</b>"
+                "<br>"
+                f"[sound:{os.path.basename(sentence_pronunciation_file)}]"
+            )
+
+
+        # Update the note with the audio references.
+        note.fields[1] = back_with_audio
+
 
         # -------------------------------------------------
         # WRITE PACKAGE TO MEMORY
         # -------------------------------------------------
 
         package_bytes = io.BytesIO()
-
-        # genanki expects a file path, so create a uniquely-named
-        # temporary .apkg file first (unique per request, so two
-        # concurrent downloads can never collide on disk).
 
         temp_apkg = os.path.join(
             tempfile.gettempdir(),
@@ -1654,11 +1711,14 @@ def download_flashcard():
 
         package_bytes.seek(0)
 
+
         # -------------------------------------------------
         # CLEAN TEMPORARY FILES
         # -------------------------------------------------
 
-        if os.path.exists(temp_apkg):
+        if os.path.exists(
+            temp_apkg
+        ):
 
             try:
 
@@ -1670,17 +1730,46 @@ def download_flashcard():
 
                 pass
 
-        if pronunciation_file and os.path.exists(pronunciation_file):
+
+        if (
+            word_pronunciation_file
+            and os.path.exists(
+                word_pronunciation_file
+            )
+        ):
 
             try:
 
                 os.remove(
-                    pronunciation_file
+                    word_pronunciation_file
                 )
 
             except OSError:
 
                 pass
+
+
+        if (
+            sentence_pronunciation_file
+            and os.path.exists(
+                sentence_pronunciation_file
+            )
+        ):
+
+            try:
+
+                os.remove(
+                    sentence_pronunciation_file
+                )
+
+            except OSError:
+
+                pass
+
+
+        # -------------------------------------------------
+        # DOWNLOAD FILENAME
+        # -------------------------------------------------
 
         safe_word = re.sub(
             r"[^a-zA-Z0-9_-]",
@@ -1692,12 +1781,14 @@ def download_flashcard():
             f"AI_Flashcard_{safe_word}.apkg"
         )
 
+
         return send_file(
             package_bytes,
             mimetype="application/octet-stream",
             as_attachment=True,
             download_name=filename
         )
+
 
     except Exception as e:
 
