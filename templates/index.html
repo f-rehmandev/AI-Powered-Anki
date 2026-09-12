@@ -1,3684 +1,891 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
-
     <meta charset="UTF-8">
-
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
     <title>AI Powered Flashcards</title>
-
-
     <style>
-
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        :root {
+            --text: #1f344d;
+            --heading: #1d3652;
+            --muted: #66839c;
+            --border: #c9dced;
+            --primary: #348ddd;
+            --primary-light: #4bb2ee;
+            --panel: rgba(238, 244, 249, 0.95);
+            --success: #27b77b;
+            --error: #d96b6b;
         }
-
         body {
-            font-family:
-                -apple-system,
-                BlinkMacSystemFont,
-                "Segoe UI",
-                Arial,
-                sans-serif;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #dbe9f4 0%,
-                    #e6eaee 50%,
-                    #d7e6ef 100%
-                );
-
-            color: #1f344d;
-
-            min-height: 100vh;
-
-            padding-bottom: 60px;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+            background: linear-gradient(135deg, #dbe9f4 0%, #e6eaee 50%, #d7e6ef 100%);
+            color: var(--text); min-height: 100vh; padding-bottom: 60px;
         }
-
-
-        /* =========================
-           HEADER
-        ========================= */
-
         .header {
-
-            height: 86px;
-
-            background:
-                rgba(232, 240, 247, 0.94);
-
-            border-bottom:
-                1px solid #c3d7e5;
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: space-between;
-
-            padding: 0 6%;
-
-            box-shadow:
-                0 2px 12px rgba(40, 90, 130, 0.08);
+            height: 86px; background: rgba(232, 240, 247, 0.94); border-bottom: 1px solid #c3d7e5;
+            display: flex; align-items: center; justify-content: space-between; padding: 0 6%;
+            box-shadow: 0 2px 12px rgba(40, 90, 130, 0.08);
         }
-
-
-        .brand {
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 15px;
-        }
-
-
+        .brand { display: flex; align-items: center; gap: 15px; }
         .logo {
-
-            width: 48px;
-
-            height: 48px;
-
-            border-radius: 13px;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #66c7f5,
-                    #3189df
-                );
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: center;
-
-            color: white;
-
-            font-size: 24px;
-
-            font-weight: 700;
-
-            box-shadow:
-                0 6px 16px rgba(49, 137, 223, 0.25);
+            width: 48px; height: 48px; border-radius: 13px; background: linear-gradient(135deg, #66c7f5, #3189df);
+            display: flex; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: 700;
+            box-shadow: 0 6px 16px rgba(49, 137, 223, 0.25);
         }
-
-
-        .brand h1 {
-
-            font-size: 23px;
-
-            font-weight: 700;
-
-            color: #1b3552;
-        }
-
-
-        .brand h1 span {
-
-            color: #2998e8;
-        }
-
-
-        .brand p {
-
-            margin-top: 3px;
-
-            font-size: 13px;
-
-            color: #66839c;
-        }
-
-
-        .anki-status {
-
-            display: flex;
-
-            align-items: center;
-
-            gap: 9px;
-
-            font-size: 14px;
-
-            color: #46607a;
-
-            font-weight: 500;
-        }
-
-
-        .status-dot {
-
-            width: 9px;
-
-            height: 9px;
-
-            background: #27b77b;
-
-            border-radius: 50%;
-        }
-
-
-        /* =========================
-           MAIN
-        ========================= */
-
-        .container {
-
-            width: 90%;
-
-            max-width: 1180px;
-
-            margin: 0 auto;
-        }
-
-
-        .hero {
-
-            text-align: center;
-
-            padding: 65px 20px 40px;
-        }
-
-
-        .hero h2 {
-
-            font-size: 42px;
-
-            line-height: 1.2;
-
-            color: #1d3652;
-
-            font-weight: 750;
-        }
-
-
-        .hero h2 span {
-
-            color: #3b9fe9;
-        }
-
-
-        .hero p {
-
-            margin-top: 15px;
-
-            font-size: 17px;
-
-            color: #56708a;
-        }
-
-
-        /* =========================
-           INPUT CARD
-        ========================= */
-
+        .brand h1 { font-size: 23px; font-weight: 700; color: #1b3552; }
+        .brand h1 span { color: #2998e8; }
+        .brand p { margin-top: 3px; font-size: 13px; color: var(--muted); }
+        .anki-status { display: flex; align-items: center; gap: 9px; font-size: 14px; color: #46607a; font-weight: 500; }
+        .status-dot { width: 9px; height: 9px; background: var(--success); border-radius: 50%; }
+        .status-dot.status-checking { background: #d9a441; }
+        .status-dot.status-error { background: var(--error); }
+        .container { width: 90%; max-width: 1180px; margin: 0 auto; }
+        .hero { text-align: center; padding: 65px 20px 40px; }
+        .hero h2 { font-size: 42px; line-height: 1.2; color: var(--heading); font-weight: 750; }
+        .hero h2 span { color: #3b9fe9; }
+        .hero p { margin-top: 15px; font-size: 17px; color: #56708a; }
         .generator-card {
-
-            background:
-                rgba(238, 244, 249, 0.95);
-
-            border:
-                1px solid #c9dced;
-
-            border-radius: 18px;
-
-            padding: 32px;
-
-            display: grid;
-
-            grid-template-columns:
-                1fr 1fr 1fr auto;
-
-            gap: 20px;
-
-            align-items: end;
-
-            box-shadow:
-                0 12px 35px rgba(50, 100, 140, 0.12);
+            background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 32px;
+            display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 20px; align-items: end;
+            box-shadow: 0 12px 35px rgba(50, 100, 140, 0.12);
         }
-
-
-        .field {
-
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 9px;
+        .field { display: flex; flex-direction: column; gap: 9px; }
+        .field label { font-size: 14px; font-weight: 650; color: #29455f; }
+        .field input, .field select {
+            height: 50px; width: 100%; border: 1px solid #b8d0e0; border-radius: 11px; padding: 0 15px;
+            font-size: 15px; color: #29455f; background: #fbfdfe; outline: none; transition: 0.2s;
         }
-
-
-        .field label {
-
-            font-size: 14px;
-
-            font-weight: 650;
-
-            color: #29455f;
-        }
-
-
-        .field input,
-        .field select {
-
-            height: 50px;
-
-            width: 100%;
-
-            border:
-                1px solid #b8d0e0;
-
-            border-radius: 11px;
-
-            padding: 0 15px;
-
-            font-size: 15px;
-
-            color: #29455f;
-
-            background: #fbfdfe;
-
-            outline: none;
-
-            transition: 0.2s;
-        }
-
-
-        .field input:focus,
-        .field select:focus {
-
-            border-color: #4aa8eb;
-
-            box-shadow:
-                0 0 0 3px rgba(74, 168, 235, 0.13);
-        }
-
-
-        .field input::placeholder {
-
-            color: #8fa4b6;
-        }
-
-
+        .field input:focus, .field select:focus { border-color: #4aa8eb; box-shadow: 0 0 0 3px rgba(74, 168, 235, 0.13); }
+        .field input::placeholder { color: #8fa4b6; }
         .generate-button {
-
-            height: 50px;
-
-            padding: 0 27px;
-
-            border: none;
-
-            border-radius: 11px;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #4bb2ee,
-                    #348ddd
-                );
-
-            color: white;
-
-            font-size: 15px;
-
-            font-weight: 650;
-
-            cursor: pointer;
-
-            transition: 0.2s;
-
-            box-shadow:
-                0 7px 16px rgba(52, 141, 221, 0.25);
+            height: 50px; padding: 0 27px; border: none; border-radius: 11px; background: linear-gradient(135deg, #4bb2ee, #348ddd);
+            color: white; font-size: 15px; font-weight: 650; cursor: pointer; transition: 0.2s; box-shadow: 0 7px 16px rgba(52, 141, 221, 0.25);
         }
-
-
-        .generate-button:hover {
-
-            transform: translateY(-2px);
-
-            box-shadow:
-                0 10px 20px rgba(52, 141, 221, 0.3);
-        }
-
-
-        .generate-button:disabled {
-
-            opacity: 0.65;
-
-            cursor: not-allowed;
-
-            transform: none;
-        }
-
-
-        /* =========================
-           CREATE DECK
-        ========================= */
-
-        .create-deck {
-
-            margin-top: 10px;
-
-            display: inline-flex;
-
-            align-items: center;
-
-            gap: 6px;
-
-            color: #2f96e5;
-
-            font-size: 13px;
-
-            font-weight: 600;
-
-            cursor: pointer;
-
-            text-decoration: none;
-
-            background: none;
-
-            border: none;
-
-            padding: 0;
-        }
-
-
-        .create-deck:hover {
-
-            text-decoration: underline;
-        }
-
-
-        /* =========================
-           FLASHCARD SECTION
-        ========================= */
-
+        .generate-button:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(52, 141, 221, 0.3); }
+        .generate-button:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+        .create-deck { margin-top: 10px; display: inline-flex; align-items: center; gap: 6px; color: #2f96e5; font-size: 13px; font-weight: 600; cursor: pointer; text-decoration: none; background: none; border: none; padding: 0; }
+        .create-deck:hover { text-decoration: underline; }
         .flashcard-section {
-
-            margin-top: 32px;
-
-            background:
-                rgba(238, 244, 249, 0.95);
-
-            border:
-                1px solid #c9dced;
-
-            border-radius: 18px;
-
-            padding: 32px;
-
-            box-shadow:
-                0 12px 35px rgba(50, 100, 140, 0.11);
+            margin-top: 32px; background: var(--panel); border: 1px solid var(--border); border-radius: 18px; padding: 32px;
+            box-shadow: 0 12px 35px rgba(50, 100, 140, 0.11);
         }
-
-
-        .section-title {
-
-            margin-bottom: 22px;
-        }
-
-
-        .section-title h3 {
-
-            font-size: 22px;
-
-            color: #1e3854;
-        }
-
-
-        .section-title p {
-
-            margin-top: 5px;
-
-            color: #66809a;
-
-            font-size: 14px;
-        }
-
-
-        .flashcard-layout {
-
-            display: grid;
-
-            grid-template-columns:
-                minmax(0, 1fr) 300px;
-
-            gap: 25px;
-        }
-
-
-        /* =========================
-           FLASHCARD
-        ========================= */
-
-        .flashcard {
-
-            background: #fafcfe;
-
-            border:
-                1px solid #c8dce9;
-
-            border-radius: 15px;
-
-            padding: 28px;
-
-            box-shadow:
-                0 6px 20px rgba(40, 90, 130, 0.08);
-        }
-
-
-        .word-header {
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #dcebf6,
-                    #e3e9ef
-                );
-
-            border-radius: 11px;
-
-            padding: 17px 20px;
-
-            display: flex;
-
-            align-items: center;
-
-            justify-content: space-between;
-
-            margin-bottom: 25px;
-        }
-
-.word-header-left {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 14px;
-}
-
-.header-pronounce-button {
-
-    margin-top: 0;
-
-    flex-shrink: 0;
-}
-        .word-header h4 {
-
-            font-size: 27px;
-
-            color: #1c3551;
-        }
-
-
-        .part-badge {
-
-            background: #cfe6f7;
-
-            border:
-                1px solid #a9d3ef;
-
-            color: #318bd2;
-
-            padding: 6px 12px;
-
-            border-radius: 20px;
-
-            font-size: 12px;
-
-            font-weight: 700;
-
-            text-transform: lowercase;
-        }
-
-
-        .details {
-
-            display: grid;
-
-            grid-template-columns: 1fr 1fr;
-
-            gap: 20px 35px;
-        }
-
-
-        .detail {
-
-            display: flex;
-
-            flex-direction: column;
-
-            gap: 5px;
-        }
-
-
-        .detail-label {
-
-            font-size: 12px;
-
-            color: #71879a;
-
-            font-weight: 650;
-
-            text-transform: uppercase;
-
-            letter-spacing: 0.4px;
-        }
-
-
-        .detail-value {
-
-            font-size: 15px;
-
-            color: #334f69;
-
-            font-weight: 500;
-        }
-
-
-        .sentences {
-
-            border-top:
-                1px solid #cddce6;
-
-            margin-top: 25px;
-
-            padding-top: 22px;
-        }
-
-
-        .sentence {
-
-            margin-bottom: 20px;
-        }
-
-
-        .sentence:last-child {
-
-            margin-bottom: 0;
-        }
-
-
-        .sentence-label {
-
-            font-size: 13px;
-
-            color: #66819a;
-
-            font-weight: 650;
-
-            margin-bottom: 7px;
-        }
-
-
-        .sentence-text {
-
-            font-size: 15px;
-
-            line-height: 1.6;
-
-            color: #314e68;
-        }
-
-
-        /* =========================
-           VOICE BUTTON
-        ========================= */
-
-        .pronounce-button {
-
-            margin-top: 18px;
-
-            height: 38px;
-
-            padding: 0 14px;
-
-            border:
-                1px solid #b0cfe0;
-
-            border-radius: 9px;
-
-            background: #e3eff5;
-
-            color: #318bd2;
-
-            font-size: 13px;
-
-            font-weight: 650;
-
-            cursor: pointer;
-
-            transition: 0.2s;
-        }
-
-
-        .pronounce-button:hover {
-
-            background: #d5e9f1;
-
-            transform: translateY(-1px);
-        }
-
-
-        /* =========================
-           ACTION PANEL
-        ========================= */
-
-        .action-panel {
-
-            background:
-                linear-gradient(
-                    145deg,
-                    #dbe9f4,
-                    #d6e3ec
-                );
-
-            border-radius: 15px;
-
-            padding: 25px;
-
-            display: flex;
-
-            flex-direction: column;
-        }
-
-
-        .action-panel h4 {
-
-            font-size: 17px;
-
-            color: #1e3c59;
-
-            margin-bottom: 7px;
-        }
-
-
-        .action-panel p {
-
-            font-size: 13px;
-
-            line-height: 1.5;
-
-            color: #62809a;
-
-            margin-bottom: 25px;
-        }
-
-
-        .add-button {
-
-            width: 100%;
-
-            height: 49px;
-
-            border: none;
-
-            border-radius: 10px;
-
-            background:
-                linear-gradient(
-                    135deg,
-                    #49aeea,
-                    #348ddd
-                );
-
-            color: white;
-
-            font-size: 14px;
-
-            font-weight: 650;
-
-            cursor: pointer;
-
-            box-shadow:
-                0 7px 16px rgba(52, 141, 221, 0.23);
-
-            transition: 0.2s;
-        }
-
-
-        .add-button:hover {
-
-            transform: translateY(-2px);
-        }
-
-
-        .add-button:disabled {
-
-            opacity: 0.65;
-
-            cursor: not-allowed;
-
-            transform: none;
-        }
-
-
-        .new-card-button {
-
-            width: 100%;
-
-            height: 49px;
-
-            margin-top: 11px;
-
-            border:
-                1px solid #93bbd6;
-
-            border-radius: 10px;
-
-            background:
-                rgba(230, 238, 244, 0.6);
-
-            color: #436a89;
-
-            font-size: 14px;
-
-            font-weight: 600;
-
-            cursor: pointer;
-
-            transition: 0.2s;
-        }
-
-
-        .new-card-button:hover {
-
-            background: #eef4f8;
-        }
-
-
-/* =========================
-   INSTRUCTIONS BUTTON + MODAL
-========================= */
-
-.modal-overlay {
-
-    display: none;
-
-    position: fixed;
-
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-
-    background: rgba(31, 52, 77, 0.55);
-
-    z-index: 1000;
-
-    align-items: center;
-
-    justify-content: center;
-
-    padding: 20px;
-}
-
-
-.modal-overlay.open {
-
-    display: flex;
-}
-
-
-.modal-box {
-
-    background:
-        linear-gradient(
-            160deg,
-            #eef6fc,
-            #dce9f4
-        );
-
-    border:
-        1px solid #bcd7ea;
-
-    border-radius: 20px;
-
-    max-width: 640px;
-
-    width: 100%;
-
-    max-height: 85vh;
-
-    overflow-y: auto;
-
-    padding: 34px 34px 30px;
-
-    position: relative;
-
-    box-shadow:
-        0 25px 60px rgba(20, 50, 80, 0.35);
-}
-
-
-.modal-close {
-
-    position: absolute;
-
-    top: 16px;
-
-    right: 16px;
-
-    width: 30px;
-
-    height: 30px;
-
-    border: none;
-
-    border-radius: 50%;
-
-    background: #f3b6bb;
-
-    color: #7a1f26;
-
-    font-size: 16px;
-
-    font-weight: 700;
-
-    cursor: pointer;
-
-    display: flex;
-
-    align-items: center;
-
-    justify-content: center;
-
-    transition: 0.2s;
-}
-
-
-.modal-close:hover {
-
-    background: #ee8f97;
-
-    transform: scale(1.08);
-}
-
-
-.modal-box h3 {
-
-    font-size: 22px;
-
-    color: #1c3654;
-
-    margin-bottom: 6px;
-
-    padding-right: 30px;
-}
-
-
-.modal-intro {
-
-    font-size: 15px;
-
-    color: #3a5773;
-
-    margin-bottom: 22px;
-}
-
-
-.modal-option {
-
-    background: rgba(255, 255, 255, 0.6);
-
-    border: 1px solid #cfe1ef;
-
-    border-radius: 14px;
-
-    padding: 18px 20px;
-
-    margin-bottom: 18px;
-}
-
-
-.modal-option:last-child {
-
-    margin-bottom: 0;
-}
-
-
-.modal-option-title {
-
-    display: flex;
-
-    align-items: center;
-
-    gap: 10px;
-
-    margin-bottom: 10px;
-}
-
-
-.modal-option-title h4 {
-
-    font-size: 16px;
-
-    color: #1c3654;
-}
-
-
-.modal-badge {
-
-    background: #cfe6f7;
-
-    border: 1px solid #a9d3ef;
-
-    color: #227ec2;
-
-    padding: 3px 10px;
-
-    border-radius: 20px;
-
-    font-size: 11px;
-
-    font-weight: 700;
-}
-
-
-.modal-option ol {
-
-    padding-left: 20px;
-
-    display: flex;
-
-    flex-direction: column;
-
-    gap: 9px;
-}
-
-
-.modal-option li {
-
-    font-size: 14px;
-
-    line-height: 1.55;
-
-    color: #33526e;
-}
-
-
-.modal-option li b {
-
-    color: #1662a8;
-}
-
-
-.modal-note {
-
-    margin-top: 12px;
-
-    font-size: 13px;
-
-    color: #5c7690;
-
-    background: #f5f9fc;
-
-    border-left: 3px solid #4bb2ee;
-
-    padding: 9px 12px;
-
-    border-radius: 6px;
-}
-
-
-@media (max-width: 600px) {
-
-    .modal-box {
-
-        padding: 26px 20px 24px;
-    }
-
-}
-
-        /* =========================
-           MESSAGE
-        ========================= */
-
-        .message {
-
-            margin-top: 25px;
-
-            padding: 15px 18px;
-
-            border-radius: 11px;
-
-            font-size: 14px;
-        }
-
-
-        .success {
-
-            background: #d9f0e4;
-
-            border:
-                1px solid #a9d9c1;
-
-            color: #277957;
-        }
-
-
-        .error {
-
-            background: #fbe1e1;
-
-            border:
-                1px solid #e3b3b3;
-
-            color: #a54a4a;
-        }
-
-
-        /* =========================
-           RESPONSIVE
-        ========================= */
-
-        @media (max-width: 1050px) {
-
-            .generator-card {
-
-                grid-template-columns:
-                    1fr 1fr;
-            }
-
-
-            .generate-button {
-
-                width: 100%;
-            }
-
-        }
-
-
-        @media (max-width: 850px) {
-
-            .generator-card {
-
-                grid-template-columns: 1fr;
-            }
-
-
-            .flashcard-layout {
-
-                grid-template-columns: 1fr;
-            }
-
-
-            .hero h2 {
-
-                font-size: 34px;
-            }
-
-        }
-
-
-        @media (max-width: 600px) {
-
-            .header {
-
-                padding: 0 20px;
-            }
-
-
-            .anki-status {
-
-                display: none;
-            }
-
-
-            .container {
-
-                width: 94%;
-            }
-
-
-            .hero {
-
-                padding-top: 40px;
-            }
-
-
-            .hero h2 {
-
-                font-size: 29px;
-            }
-
-
-            .generator-card,
-            .flashcard-section {
-
-                padding: 20px;
-            }
-
-
-            .flashcard {
-
-                padding: 20px;
-            }
-
-
-            .details {
-
-                grid-template-columns: 1fr;
-            }
-
-        }
-
+        .section-title { margin-bottom: 22px; }
+        .section-title h3 { font-size: 22px; color: #1e3854; }
+        .section-title p { margin-top: 5px; color: #66809a; font-size: 14px; }
+        .flashcard-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 25px; }
+        .flashcard { background: #fafcfe; border: 1px solid #c8dce9; border-radius: 15px; padding: 28px; box-shadow: 0 6px 20px rgba(40, 90, 130, 0.08); }
+        .word-header { background: linear-gradient(135deg, #dcebf6, #e3e9ef); border-radius: 11px; padding: 17px 20px; display: flex; align-items: center; justify-content: space-between; gap: 15px; margin-bottom: 25px; }
+        .word-header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
+        .pronounce-button.header-pronounce-button { margin-top: 0; flex-shrink: 0; }
+        .word-header h4 { font-size: 27px; color: #1c3551; overflow-wrap: break-word; }
+        .part-badge { background: #cfe6f7; border: 1px solid #a9d3ef; color: #318bd2; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; text-transform: lowercase; }
+        .details { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 35px; }
+        .detail { display: flex; flex-direction: column; gap: 5px; }
+        .detail-label { font-size: 12px; color: #71879a; font-weight: 650; text-transform: uppercase; letter-spacing: 0.4px; }
+        .detail-value { font-size: 15px; color: #334f69; font-weight: 500; overflow-wrap: break-word; }
+        .sentences { border-top: 1px solid #cddce6; margin-top: 25px; padding-top: 22px; }
+        .sentence { margin-bottom: 20px; }
+        .sentence:last-child { margin-bottom: 0; }
+        .sentence-label { font-size: 13px; color: #66819a; font-weight: 650; margin-bottom: 7px; }
+        .sentence-text { font-size: 15px; line-height: 1.6; color: #314e68; overflow-wrap: break-word; }
+        .pronounce-button { margin-top: 18px; height: 38px; padding: 0 14px; border: 1px solid #b0cfe0; border-radius: 9px; background: #e3eff5; color: #318bd2; font-size: 13px; font-weight: 650; cursor: pointer; transition: 0.2s; }
+        .pronounce-button:hover { background: #d5e9f1; transform: translateY(-1px); }
+        .pronounce-button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+        .action-panel { background: linear-gradient(145deg, #dbe9f4, #d6e3ec); border-radius: 15px; padding: 25px; display: flex; flex-direction: column; }
+        .action-panel h4 { font-size: 17px; color: #1e3c59; margin-bottom: 7px; }
+        .action-panel p { font-size: 13px; line-height: 1.5; color: #62809a; margin-bottom: 25px; }
+        .add-button { width: 100%; height: 49px; border: none; border-radius: 10px; background: linear-gradient(135deg, #49aeea, #348ddd); color: white; font-size: 14px; font-weight: 650; cursor: pointer; box-shadow: 0 7px 16px rgba(52, 141, 221, 0.23); transition: 0.2s; }
+        .add-button:hover { transform: translateY(-2px); }
+        .add-button:disabled { opacity: 0.65; cursor: not-allowed; transform: none; }
+        .new-card-button { width: 100%; height: 49px; margin-top: 11px; border: 1px solid #93bbd6; border-radius: 10px; background: rgba(230, 238, 244, 0.6); color: #436a89; font-size: 14px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+        .new-card-button:hover { background: #eef4f8; }
+        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(31, 52, 77, 0.55); z-index: 1000; align-items: center; justify-content: center; padding: 20px; }
+        .modal-overlay.open { display: flex; }
+        .modal-box { background: linear-gradient(160deg, #eef6fc, #dce9f4); border: 1px solid #bcd7ea; border-radius: 20px; max-width: 640px; width: 100%; max-height: 85vh; overflow-y: auto; padding: 34px 34px 30px; position: relative; box-shadow: 0 25px 60px rgba(20, 50, 80, 0.35); }
+        .modal-close { position: absolute; top: 16px; right: 16px; width: 30px; height: 30px; border: none; border-radius: 50%; background: #f3b6bb; color: #7a1f26; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .modal-close:hover { background: #ee8f97; transform: scale(1.08); }
+        .modal-box h3 { font-size: 22px; color: #1c3654; margin-bottom: 6px; padding-right: 30px; }
+        .modal-intro { font-size: 15px; color: #3a5773; margin-bottom: 22px; }
+        .modal-option { background: rgba(255,255,255,0.6); border: 1px solid #cfe1ef; border-radius: 14px; padding: 18px 20px; margin-bottom: 18px; }
+        .modal-option:last-child { margin-bottom: 0; }
+        .modal-option-title { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .modal-option-title h4 { font-size: 16px; color: #1c3654; }
+        .modal-badge { background: #cfe6f7; border: 1px solid #a9d3ef; color: #227ec2; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; }
+        .modal-option ol { padding-left: 20px; display: flex; flex-direction: column; gap: 9px; }
+        .modal-option li { font-size: 14px; line-height: 1.55; color: #33526e; }
+        .modal-option li b { color: #1662a8; }
+        .modal-note { margin-top: 12px; font-size: 13px; color: #5c7690; background: #f5f9fc; border-left: 3px solid #4bb2ee; padding: 9px 12px; border-radius: 6px; }
+        .message { margin-top: 25px; padding: 15px 18px; border-radius: 11px; font-size: 14px; white-space: pre-line; }
+        .success { background: #d9f0e4; border: 1px solid #a9d9c1; color: #277957; }
+        .error { background: #fbe1e1; border: 1px solid #e3b3b3; color: #a54a4a; }
+        @media (max-width: 1050px) { .generator-card { grid-template-columns: 1fr 1fr; } .generate-button { width: 100%; } }
+        @media (max-width: 850px) { .generator-card { grid-template-columns: 1fr; } .flashcard-layout { grid-template-columns: 1fr; } .hero h2 { font-size: 34px; } }
+        @media (max-width: 700px) { .quality-checks { grid-template-columns: 1fr 1fr; } }
+        @media (max-width: 600px) { .header { padding: 0 20px; } .anki-status { display: none; } .container { width: 94%; } .hero { padding-top: 40px; } .hero h2 { font-size: 29px; } .generator-card, .flashcard-section { padding: 20px; } .flashcard { padding: 20px; } .details { grid-template-columns: 1fr; } .modal-box { padding: 26px 20px 24px; } .word-header { align-items: flex-start; flex-direction: column; } .pronounce-button.header-pronounce-button { width: 100%; } }
+        @media (max-width: 450px) { .quality-header { align-items: flex-start; flex-direction: column; } .quality-checks { grid-template-columns: 1fr; } }
     </style>
-
 </head>
-
-
 <body>
-
-
 <header class="header">
-
     <div class="brand">
-
-        <div class="logo">
-            ✦
-        </div>
-
+        <div class="logo">✦</div>
         <div>
-
-            <h1>
-                AI Powered <span>Flashcards</span>
-            </h1>
-
-            <p>
-                Build your vocabulary, one word at a time.
-            </p>
-
+            <h1>AI Powered <span>Flashcards</span></h1>
+            <p>Build your vocabulary, one word at a time.</p>
         </div>
-
     </div>
-
-
-    <div class="anki-status">
-
-        <span>●</span>
-
-        Connected to Anki
-
-        <span class="status-dot"></span>
-
+    <div class="anki-status" id="ankiStatus">
+        <span id="ankiStatusIcon">●</span>
+        <span id="ankiStatusText">Checking Anki connection...</span>
+        <span id="ankiStatusDot" class="status-dot status-checking"></span>
     </div>
-
 </header>
 
-
-
 <main class="container">
-
-
-    <!-- =========================
-         HERO
-    ========================= -->
-
     <section class="hero">
-
-        <h2>
-            Generate Your <span>Flashcards Here!</span>
-        </h2>
-
-        <p>
-            Enter a word, choose your language and Anki deck,
-            and create a complete flashcard.
-        </p>
-
+        <h2>Generate Your <span>Flashcards Here!</span></h2>
+        <p>Enter an English word, choose the target language and Anki deck, and create a complete flashcard.</p>
     </section>
 
-
-
-    <!-- =========================
-         GENERATOR
-    ========================= -->
-
-    <form
-        id="generatorForm"
-        class="generator-card"
-    >
-
-
-        <!-- WORD -->
-
+    <form id="generatorForm" class="generator-card">
         <div class="field">
-
-            <label for="word">
-                Word
-            </label>
-
-            <input
-                type="text"
-                id="word"
-                name="word"
-                placeholder="e.g. Bewerbung"
-                autocomplete="off"
-                required
-            >
-
+            <label for="word">English word</label>
+            <input type="text" id="word" name="word" placeholder="e.g. cook" autocomplete="off" maxlength="120" required>
         </div>
-
-
-
-        <!-- LANGUAGE -->
-
         <div class="field">
-
-            <label for="language">
-                Language
-            </label>
-
-            <select
-                id="language"
-                name="language"
-                required
-            >
-
-                <option value="">
-                    Select language
-                </option>
-
-                <option value="English">
-                    English
-                </option>
-
-                <option value="Spanish">
-                    Spanish
-                </option>
-
-                <option value="French">
-                    French
-                </option>
-
-                <option value="German">
-                    German
-                </option>
-
-                <option value="Italian">
-                    Italian
-                </option>
-
-                <option value="Portuguese">
-                    Portuguese
-                </option>
-
-                <option value="Russian">
-                    Russian
-                </option>
-
-                <option value="Japanese">
-                    Japanese
-                </option>
-
-                <option value="Korean">
-                    Korean
-                </option>
-
-                <option value="Chinese">
-                    Chinese
-                </option>
-
-                <option value="Arabic">
-                    Arabic
-                </option>
-
-                <option value="Hindi">
-                    Hindi
-                </option>
-
-                <option value="Turkish">
-                    Turkish
-                </option>
-
-                <option value="Dutch">
-                    Dutch
-                </option>
-
-                <option value="Polish">
-                    Polish
-                </option>
-
-                <option value="Ukrainian">
-                    Ukrainian
-                </option>
-
-                <option value="Swedish">
-                    Swedish
-                </option>
-
-                <option value="Greek">
-                    Greek
-                </option>
-
-                <option value="Indonesian">
-                    Indonesian
-                </option>
-
-                <option value="Vietnamese">
-                    Vietnamese
-                </option>
-
+            <label for="language">Target language</label>
+            <select id="language" name="language" required>
+                <option value="">Select language</option>
+                <option value="English">English</option><option value="Spanish">Spanish</option><option value="French">French</option>
+                <option value="German">German</option><option value="Italian">Italian</option><option value="Portuguese">Portuguese</option>
+                <option value="Russian">Russian</option><option value="Japanese">Japanese</option><option value="Korean">Korean</option>
+                <option value="Chinese">Chinese</option><option value="Arabic">Arabic</option><option value="Hindi">Hindi</option>
+                <option value="Turkish">Turkish</option><option value="Dutch">Dutch</option><option value="Polish">Polish</option>
+                <option value="Ukrainian">Ukrainian</option><option value="Swedish">Swedish</option><option value="Greek">Greek</option>
+                <option value="Indonesian">Indonesian</option><option value="Vietnamese">Vietnamese</option>
             </select>
-
         </div>
-
-
-
-        <!-- ANKI DECK -->
-
         <div class="field">
-
-            <label for="deck">
-                Anki deck
-            </label>
-
-            <select
-                id="deck"
-                name="deck"
-            >
-
-                <option value="">
-                    Loading decks...
-                </option>
-
+            <label for="deck">Anki deck</label>
+            <select id="deck" name="deck">
+                <option value="">Loading decks...</option>
             </select>
-
-
-            <button
-                type="button"
-                id="createDeckButton"
-                class="create-deck"
-            >
-                + Create New Deck
-            </button>
-
+            <button type="button" id="createDeckButton" class="create-deck">+ Create New Deck</button>
         </div>
-
-
-
-        <!-- CREATE FLASHCARD -->
-
-        <button
-            type="submit"
-            id="generateButton"
-            class="generate-button"
-        >
-            ✨ Create Flashcard
-        </button>
-
+        <button type="submit" id="generateButton" class="generate-button">✨ Create Flashcard</button>
     </form>
 
+    <div id="message" style="display:none;"></div>
 
-
-    <!-- =========================
-         MESSAGE
-    ========================= -->
-
-    <div
-        id="message"
-        style="display:none;"
-    ></div>
-
-
-
-    <!-- =========================
-         FLASHCARD
-    ========================= -->
-
-    <section
-        id="flashcardSection"
-        class="flashcard-section"
-        style="display:none;"
-    >
-
+    <section id="flashcardSection" class="flashcard-section" style="display:none;">
         <div class="section-title">
-
-            <h3>
-                Your Flashcard
-            </h3>
-
-            <p>
-                Review your card and add it to your selected Anki deck.
-            </p>
-
+            <h3>Your Flashcard</h3>
+            <p>Review your card and add it to your selected Anki deck.</p>
         </div>
-
 
         <div class="flashcard-layout">
-
-
-            <!-- =====================
-                 CARD
-            ====================== -->
-
             <div class="flashcard">
-
-<div class="word-header">
-
-    <div class="word-header-left">
-
-        <h4 id="cardWord"></h4>
-
-        <span
-            id="cardPartOfSpeech"
-            class="part-badge"
-        ></span>
-
-    </div>
-
-    <button
-        type="button"
-        id="pronounceButton"
-        class="pronounce-button header-pronounce-button"
-    >
-        🔊 Pronounce Word
-    </button>
-
-</div>
-
-
+                <div class="word-header">
+                    <div class="word-header-left">
+                        <h4 id="cardWord"></h4>
+                        <span id="cardPartOfSpeech" class="part-badge"></span>
+                    </div>
+                    <button type="button" id="pronounceButton" class="pronounce-button header-pronounce-button">🔊 Pronounce Word</button>
+                </div>
 
                 <div class="details">
-
-
-                    <div class="detail">
-
-                        <span class="detail-label">
-                            English meaning
-                        </span>
-
-                        <span
-                            id="cardMeaning"
-                            class="detail-value"
-                        ></span>
-
-                    </div>
-
-
-
-                    <div class="detail">
-
-                        <span class="detail-label">
-                            Part of speech
-                        </span>
-
-                        <span
-                            id="cardPartOfSpeech2"
-                            class="detail-value"
-                        ></span>
-
-                    </div>
-
-
-
-                    <div
-                        id="articleDetail"
-                        class="detail"
-                        style="display:none;"
-                    >
-
-                        <span class="detail-label">
-                            Article
-                        </span>
-
-                        <span
-                            id="cardArticle"
-                            class="detail-value"
-                        ></span>
-
-                    </div>
-
-
-
-                    <div
-                        id="genderDetail"
-                        class="detail"
-                        style="display:none;"
-                    >
-
-                        <span class="detail-label">
-                            Gender
-                        </span>
-
-                        <span
-                            id="cardGender"
-                            class="detail-value"
-                        ></span>
-
-                    </div>
-
-
-
-                    <div
-                        id="pluralDetail"
-                        class="detail"
-                        style="display:none;"
-                    >
-
-                        <span class="detail-label">
-                            Plural
-                        </span>
-
-                        <span
-                            id="cardPlural"
-                            class="detail-value"
-                        ></span>
-
-                    </div>
-
-
+                    <div class="detail"><span class="detail-label">English meaning</span><span id="cardMeaning" class="detail-value"></span></div>
+                    <div class="detail"><span class="detail-label">Part of speech</span><span id="cardPartOfSpeech2" class="detail-value"></span></div>
+                    <div id="articleDetail" class="detail" style="display:none;"><span class="detail-label">Article</span><span id="cardArticle" class="detail-value"></span></div>
+                    <div id="genderDetail" class="detail" style="display:none;"><span class="detail-label">Gender</span><span id="cardGender" class="detail-value"></span></div>
+                    <div id="pluralDetail" class="detail" style="display:none;"><span class="detail-label">Plural</span><span id="cardPlural" class="detail-value"></span></div>
                 </div>
-
-
 
                 <div class="sentences">
-
-
-                    <!-- TARGET LANGUAGE SENTENCE -->
-
                     <div class="sentence">
-
-                        <div
-                            id="targetSentenceLabel"
-                            class="sentence-label"
-                        >
-                            Target language sentence
-                        </div>
-
-                        <div
-                            id="cardGermanSentence"
-                            class="sentence-text"
-                        ></div>
-                        
-                        <button
-                            type="button"
-                            id="pronounceSentenceButton"
-                            class="pronounce-button"
-                            style="margin-top: 10px;"
-                        >
-                            🔊 Pronounce Sentence
-                        </button>
-
+                        <div id="targetSentenceLabel" class="sentence-label">Target language sentence</div>
+                        <div id="cardTargetSentence" class="sentence-text"></div>
+                        <button type="button" id="pronounceSentenceButton" class="pronounce-button" style="margin-top:10px;">🔊 Pronounce Sentence</button>
                     </div>
-
-
-
-                    <!-- ENGLISH SENTENCE -->
-
                     <div class="sentence">
-
-                        <div class="sentence-label">
-                            🇬🇧 English sentence
-                        </div>
-
-                        <div
-                            id="cardEnglishSentence"
-                            class="sentence-text"
-                        ></div>
-
+                        <div class="sentence-label">🇬🇧 English sentence</div>
+                        <div id="cardEnglishSentence" class="sentence-text"></div>
                     </div>
-
-
                 </div>
-
-
             </div>
-
-
-
-            <!-- =====================
-                 ACTION PANEL
-            ====================== -->
 
             <div class="action-panel">
-
-                <h4>
-                    Flashcard ready
-                </h4>
-
-                <p>
-                    Your card has been generated.
-                    Add it directly to your selected Anki deck.
-                    The pronunciation will also be saved when available.
-                </p>
-
-
-                <button
-                    type="button"
-                    id="addToAnkiButton"
-                    class="add-button"
-                >
-                    ＋ Add to Anki
-                </button>
-
-                <button
-                 type="button"
-                id="downloadCardButton"
-                class="new-card-button"
-                >
-                ↓ Download Flashcard
-
-
-                 </button>
-
-
-                <button
-                    type="button"
-                    id="newCardButton"
-                    class="new-card-button"
-                >
-                    ↻ Generate New Card
-
-                    </button>
-
-
-<button
-    type="button"
-    id="instructionsButton"
-    class="new-card-button"
->
-    📖 Instructions
-</button>
-
+                <h4>Flashcard ready</h4>
+                <p>Your card has been generated. Add it directly to your selected Anki deck. The pronunciation will also be saved when available.</p>
+                <button type="button" id="addToAnkiButton" class="add-button">＋ Add to Anki</button>
+                <button type="button" id="downloadCardButton" class="new-card-button">↓ Download Flashcard</button>
+                <button type="button" id="newCardButton" class="new-card-button">↻ Generate New Card</button>
+                <button type="button" id="instructionsButton" class="new-card-button">📖 Instructions</button>
             </div>
-
-
         </div>
-
     </section>
-
-
 </main>
 
-
-
-
-<!-- =========================
-     INSTRUCTIONS MODAL
-========================= -->
-
 <div id="instructionsModal" class="modal-overlay">
-
-    <div class="modal-box">
-
-        <button
-            type="button"
-            id="closeInstructionsButton"
-            class="modal-close"
-            aria-label="Close instructions"
-        >
-            ✕
-        </button>
-
-        <h3>How to get your flashcards into Anki</h3>
-
-        <p class="modal-intro">
-            You have <b>2 options</b> — pick whichever works best for you.
-        </p>
-
+    <div class="modal-box" role="dialog" aria-modal="true" aria-labelledby="instructionsTitle">
+        <button type="button" id="closeInstructionsButton" class="modal-close" aria-label="Close instructions">✕</button>
+        <h3 id="instructionsTitle">How to get your flashcards into Anki</h3>
+        <p class="modal-intro">You have <b>2 options</b> — pick whichever works best for you.</p>
 
         <div class="modal-option">
-
-            <div class="modal-option-title">
-                <h4>Option 1 — Download the flashcard manually</h4>
-            </div>
-
+            <div class="modal-option-title"><h4>Option 1 — Connect this website directly to Anki</h4><span class="modal-badge">Recommended</span></div>
+            <p style="font-size:14px;line-height:1.55;color:#33526e;margin-bottom:16px;">
+                <b>First-time users:</b> follow Steps <b>1–7</b> once. After setup, you only need <b>Step 8</b> whenever you use the website.
+            </p>
             <ol>
-                <li>Click <b>Download Flashcard</b> — the file will be saved to your computer's <b>Downloads</b> folder.</li>
-                <li>Open your Downloads folder and <b>double-click the downloaded file</b> — it will open automatically in Anki.</li>
-                <li>Click <b>Import</b>.</li>
-                <li>The card will land in its <b>own separate deck</b>, not the deck you normally study — this is expected.</li>
-                <li>To move it into your preferred deck: click that deck on Anki's main screen (before clicking "Study Now") → click <b>Browse</b> → click the card once to select it → click <b>Change Deck</b> (or press <b>Ctrl + D</b>) → choose your preferred deck → click <b>Move Cards</b>.</li>
+                <li>Open the <b>Anki desktop app</b> (not AnkiWeb) → <b>Tools</b> → <b>Add-ons</b>.</li>
+                <li>Click <b>Get Add-ons...</b> → enter <b>2055492159</b> → click <b>OK</b>.</li>
+                <li>Wait for <b>AnkiConnect</b> to install, then <b>restart Anki</b>.</li>
+                <li>Come back to this website and <b>reload the page</b> while Anki is open.</li>
+                <li>If your browser asks for permission to allow this website to access services on your computer, choose <b>Allow</b>.</li>
+                <li>If Anki asks whether this website may connect, choose <b>Yes/Allow</b>.</li>
+                <li>If the connection is still blocked, see the troubleshooting message shown by the website and check AnkiConnect's <b>webCorsOriginList</b>.</li>
             </ol>
+            <div class="modal-note"><b>Steps 1–7 are only for first-time users.</b> You do not normally repeat them.</div>
 
+            <div style="margin-top:22px;padding-top:20px;border-top:1px solid #cddce6;">
+                <div class="modal-option-title"><h4>Step 8 — Normal use</h4><span class="modal-badge">Every time</span></div>
+                <ol>
+                    <li>Open the <b>Anki desktop app</b> and keep it <b>running</b>.</li>
+                    <li>Open this website.</li>
+                    <li>Wait for <b>Connected to Anki</b> at the top.</li>
+                    <li>Enter your word, choose your language and Anki deck, and create your flashcard.</li>
+                    <li>Click <b>Add to Anki</b>.</li>
+                    <li>The flashcard and available pronunciation audio will be stored in your selected deck.</li>
+                </ol>
+                <div class="modal-note"><b>Returning users:</b> you only need to follow Step 8.</div>
+            </div>
+            <div class="modal-note" style="margin-top:18px;">Anki must be <b>open and running</b> for the direct Anki features to work.</div>
         </div>
-
 
         <div class="modal-option">
-
-            <div class="modal-option-title">
-                <h4>Option 2 — Connect this website directly to Anki</h4>
-                <span class="modal-badge">Recommended</span>
-            </div>
-
+            <div class="modal-option-title"><h4>Option 2 — Download the flashcard manually</h4><span class="modal-badge">Alternative</span></div>
+            <p style="font-size:14px;line-height:1.55;color:#33526e;margin-bottom:14px;">You can download the flashcard and import it into Anki manually.</p>
             <ol>
-    <li>Open the <b>Anki desktop app</b> (not AnkiWeb) → click <b>Tools</b> in the top menu → click <b>Add-ons</b>.</li>
-    <li>Click <b>Get Add-ons...</b> in the top right → a box will appear → enter this code: <b>2055492159</b> → click <b>OK</b>.</li>
-    <li>Wait a few seconds — <b>AnkiConnect</b> will download and appear in your add-ons list. Then <b>restart Anki</b>.</li>
-    <li>Come back to this website and <b>reload the page</b> while Anki is open in the background.</li>
-    <li>A prompt will appear in the top left corner asking to send notifications — make sure to click <b>Allow</b>.</li>
-    <li>If you previously blocked notifications, click the <b>settings icon</b> (sliders or a padlock) right before to the website address in your browser's search bar, and enable the <b>'Apps on device'</b> option.</li>
-    <li>A pop-up will appear (either in your browser or inside the Anki window) asking for permission to link with the website — click <b>Yes</b>.</li>
-    <li>You'll then see a <b>"Connected to Anki"</b> with green indicator at the top of this page, and you can use <b>Add to Anki</b> and <b>Create New Deck</b> directly from now on.</li>
-</ol>
-
-            <div class="modal-note">
-                Anki must be <b>open and running</b> on your computer for this to work, and it only works in Chrome, Edge, or Firefox (not Safari).
-            </div>
-
+                <li>Click <b>Download Flashcard</b>. The file will be saved to your computer's <b>Downloads</b> folder.</li>
+                <li>Open the downloaded file in Anki.</li>
+                <li>Click <b>Import</b>.</li>
+                <li>The card will use your selected deck name when the deck name is provided.</li>
+            </ol>
+            <div class="modal-note">The downloaded flashcard contains the flashcard content and available pronunciation audio.</div>
         </div>
 
+        <div class="modal-note"><b>Important:</b> Anki must be <b>open and running</b> for <b>Add to Anki</b> and <b>Create New Deck</b> to work.</div>
     </div>
-
 </div>
 
 <script>
-
-/* =====================================================
-   GLOBAL STATE
-===================================================== */
-
 let currentCard = null;
 
+const ANKI_CONNECT_URLS = [
+    "http://127.0.0.1:8765",
+    "http://localhost:8765"
+];
 
-/* =====================================================
-   MESSAGE
-===================================================== */
+let activeAnkiConnectUrl = null;
+let ankiPermissionState = "unknown";
+let ankiApiKeyRequired = false;
 
-function showMessage(text, type) {
+const $ = (id) => document.getElementById(id);
 
-    const message =
-        document.getElementById("message");
-
-    message.textContent =
-        text;
-
-    message.className =
-        "message " + type;
-
-    message.style.display =
-        "block";
+function setAnkiStatus(text, state = "checking") {
+    const statusText = $("ankiStatusText");
+    const dot = $("ankiStatusDot");
+    if (!statusText || !dot) return;
+    statusText.textContent = text;
+    dot.className = "status-dot" + (
+        state === "checking"
+            ? " status-checking"
+            : state === "error"
+                ? " status-error"
+                : ""
+    );
 }
 
-
-function hideMessage() {
-
-    const message =
-        document.getElementById("message");
-
-    message.style.display =
-        "none";
+function formatAnkiConnectionError(error) {
+    const message = String(error?.message || error || "Unknown error");
+    const lower = message.toLowerCase();
+    if (lower.includes("failed to fetch") || lower.includes("networkerror")) {
+        return "Browser could not reach local AnkiConnect. Make sure Anki is running and allow local-device access if your browser asks.";
+    }
+    if (lower.includes("permission") || lower.includes("denied")) {
+        return "AnkiConnect permission was denied. Reload the page and allow the connection when Anki asks.";
+    }
+    if (lower.includes("api key")) {
+        return "AnkiConnect requires an API key. Configure the key consistently in AnkiConnect or disable it for this local setup.";
+    }
+    if (lower.includes("cors") || lower.includes("origin")) {
+        return "AnkiConnect rejected this website origin. Check AnkiConnect's webCorsOriginList and allow this site's origin.";
+    }
+    return message;
 }
 
+async function ankiFetch(url, payload) {
+    let response;
+    try {
+        response = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            targetAddressSpace: "loopback",
+            body: JSON.stringify(payload),
+            cache: "no-store"
+        });
+    } catch (error) {
+        throw new Error(formatAnkiConnectionError(error));
+    }
 
-/* =====================================================
-   LOAD ANKI DECKS
-===================================================== */
+    let data;
+    try {
+        data = await response.json();
+    } catch (error) {
+        throw new Error("AnkiConnect responded, but its response was not valid JSON.");
+    }
 
-async function loadDecks() {
+    if (!response.ok) {
+        throw new Error(data?.error || `AnkiConnect returned HTTP ${response.status}.`);
+    }
+    if (data?.error) {
+        throw new Error(String(data.error));
+    }
+    return data?.result;
+}
 
-    const deckSelect =
-        document.getElementById("deck");
+async function connectToAnki() {
+    setAnkiStatus("Checking Anki connection...", "checking");
+    ankiPermissionState = "checking";
+    const errors = [];
+
+    for (const url of ANKI_CONNECT_URLS) {
+        try {
+            const permission = await ankiFetch(url, {
+                action: "requestPermission",
+                version: 6
+            });
+
+            if (!permission || permission.permission !== "granted") {
+                throw new Error("AnkiConnect permission was denied.");
+            }
+
+            ankiApiKeyRequired = Boolean(permission.requireApiKey);
+            if (ankiApiKeyRequired) {
+                throw new Error("AnkiConnect requires an API key, but this browser connection does not have one configured.");
+            }
+
+            // Confirm the connection with a real harmless API action.
+            await ankiFetch(url, { action: "version", version: 6 });
+
+            activeAnkiConnectUrl = url;
+            ankiPermissionState = "granted";
+            setAnkiStatus("Connected to Anki", "connected");
+            return true;
+        } catch (error) {
+            console.error("Anki connection attempt failed:", url, error);
+            errors.push(`${url}: ${formatAnkiConnectionError(error)}`);
+        }
+    }
+
+    activeAnkiConnectUrl = null;
+    ankiPermissionState = "denied";
+    setAnkiStatus("Anki not connected", "error");
+    throw new Error(
+        "Anki connection failed.\n\n" +
+        errors.join("\n") +
+        "\n\nOpen Anki with AnkiConnect installed, reload the page, and allow the connection when prompted."
+    );
+}
+
+async function ankiRequest(action, params = {}, options = {}) {
+    const retryOnConnection = options.retryOnConnection !== false;
+
+    if (!activeAnkiConnectUrl || ankiPermissionState !== "granted") {
+        await connectToAnki();
+    }
 
     try {
-
-        // Ask AnkiConnect for permission first.
-        const permissionResponse =
-            await fetch(
-                "http://127.0.0.1:8765",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "text/plain"
-                    },
-
-                    body: JSON.stringify({
-                        action: "requestPermission",
-                        version: 6
-                    })
-                }
-            );
-
-        if (!permissionResponse.ok) {
-
-            throw new Error(
-                "AnkiConnect is not available."
-            );
-        }
-
-        const permissionData =
-            await permissionResponse.json();
-
-        if (
-            permissionData.error ||
-            !permissionData.result ||
-            permissionData.result.permission !== "granted"
-        ) {
-
-            throw new Error(
-                "Permission to use AnkiConnect was not granted."
-            );
-        }
-
-
-        // Now ask Anki for the user's decks.
-        const decksResponse =
-            await fetch(
-                "http://127.0.0.1:8765",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "text/plain"
-                    },
-
-                    body: JSON.stringify({
-                        action: "deckNames",
-                        version: 6
-                    })
-                }
-            );
-
-
-        if (!decksResponse.ok) {
-
-            throw new Error(
-                "Could not retrieve Anki decks."
-            );
-        }
-
-
-        const decksData =
-            await decksResponse.json();
-
-
-        if (decksData.error) {
-
-            throw new Error(
-                decksData.error
-            );
-        }
-
-
-        const decks =
-            decksData.result || [];
-
-
-        deckSelect.innerHTML =
-            "";
-
-
-        if (decks.length === 0) {
-
-            const option =
-                document.createElement("option");
-
-            option.value =
-                "";
-
-            option.textContent =
-                "No Anki decks found";
-
-            deckSelect.appendChild(
-                option
-            );
-
-            return;
-        }
-
-
-        decks.forEach(function(deckName) {
-
-            const option =
-                document.createElement("option");
-
-            option.value =
-                deckName;
-
-            option.textContent =
-                deckName;
-
-            deckSelect.appendChild(
-                option
-            );
-
-        });
-
-
-        // Update the status in the header.
-        const status =
-            document.querySelector(
-                ".anki-status"
-            );
-
-        if (status) {
-
-            status.innerHTML =
-                '<span>●</span> Connected to Anki <span class="status-dot"></span>';
-        }
-
-
+        return await ankiFetch(activeAnkiConnectUrl, { action, version: 6, params });
     } catch (error) {
-
-        console.error(
-            "Anki connection error:",
-            error
-        );
-
-
-        deckSelect.innerHTML =
-            "";
-
-
-        const option =
-            document.createElement("option");
-
-        option.value =
-            "";
-
-        option.textContent =
-            "Anki not connected";
-
-        deckSelect.appendChild(
-            option
-        );
-
-
-        // Update the status in the header.
-        const status =
-            document.querySelector(
-                ".anki-status"
-            );
-
-        if (status) {
-
-            status.innerHTML =
-                '<span>●</span> Anki not connected <span class="status-dot" style="background:#d96b6b;"></span>';
+        // Do not automatically retry write operations such as addNote or
+        // storeMediaFile. The first request may have reached Anki even if the
+        // browser lost the response, and retrying could create duplicates.
+        if (!retryOnConnection) {
+            throw error;
         }
 
-
-        showMessage(
-            "Anki is not connected. You can still use the flashcard generator.",
-            "error"
-        );
-
+        console.warn("Anki read request failed; reconnecting once:", action, error);
+        activeAnkiConnectUrl = null;
+        ankiPermissionState = "unknown";
+        await connectToAnki();
+        return await ankiFetch(activeAnkiConnectUrl, { action, version: 6, params });
     }
-
 }
 
+function normalizeAnkiWord(value) {
+    return String(value || "")
+        .replace(/<[^>]*>/g, "")
+        .replace(/&nbsp;/gi, " ")
+        .trim()
+        .toLocaleLowerCase();
+}
 
-/* =====================================================
-   CREATE NEW DECK
-===================================================== */
+function escapeHtml(value) {
+    return String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
-document
-    .getElementById("createDeckButton")
-    .addEventListener(
-        "click",
-        async function() {
+async function findLocalDuplicateWord(deck, word) {
+    if (!deck || !word) return null;
+    const safeWord = String(word).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    const noteIds = await ankiRequest("findNotes", { query: `front:"${safeWord}"` });
+    if (!Array.isArray(noteIds) || noteIds.length === 0) return null;
 
-            const deckName =
-                prompt(
-                    "Enter the name of your new Anki deck:"
-                );
+    const notes = await ankiRequest("notesInfo", { notes: noteIds });
+    let otherDeckDuplicate = null;
+    const targetWord = normalizeAnkiWord(word);
 
+    for (const note of Array.isArray(notes) ? notes : []) {
+        const front = note?.fields?.Front?.value || "";
+        const existingWord = String(front).replace(/<[^>]*>/g, "").replace(/&nbsp;/gi, " ").trim();
+        if (normalizeAnkiWord(existingWord) !== targetWord) continue;
 
-            if (deckName === null) {
-
-                return;
+        let existingDeck = null;
+        const cards = Array.isArray(note.cards) ? note.cards : [];
+        if (cards.length) {
+            const cardInfo = await ankiRequest("cardsInfo", { cards });
+            if (Array.isArray(cardInfo) && cardInfo.length) {
+                existingDeck = cardInfo[0]?.deckName || null;
             }
-
-
-            const cleanDeckName =
-                deckName.trim();
-
-
-            if (!cleanDeckName) {
-
-                alert(
-                    "Please enter a deck name."
-                );
-
-                return;
-            }
-
-
-            const button =
-                document.getElementById(
-                    "createDeckButton"
-                );
-
-
-            button.disabled =
-                true;
-
-
-            button.textContent =
-                "Creating...";
-
-
-            try {
-
-                // -------------------------------------------------
-                // Ask AnkiConnect to create the deck locally.
-                // -------------------------------------------------
-
-                const response =
-                    await fetch(
-                        "http://127.0.0.1:8765",
-                        {
-                            method: "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "text/plain"
-                            },
-
-                            body: JSON.stringify({
-                                action: "createDeck",
-                                version: 6,
-
-                                params: {
-                                    deck:
-                                        cleanDeckName
-                                }
-                            })
-                        }
-                    );
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        "AnkiConnect is not available."
-                    );
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                if (data.error) {
-
-                    throw new Error(
-                        data.error
-                    );
-                }
-
-
-                // -------------------------------------------------
-                // Reload the user's local decks.
-                // -------------------------------------------------
-
-                await loadDecks();
-
-
-                document
-                    .getElementById("deck")
-                    .value =
-                    cleanDeckName;
-
-
-                showMessage(
-                    "✓ Deck created successfully: " +
-                    cleanDeckName,
-                    "success"
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "Create deck error:",
-                    error
-                );
-
-
-                showMessage(
-                    "Could not create deck: " +
-                    error.message,
-                    "error"
-                );
-
-
-            } finally {
-
-                button.disabled =
-                    false;
-
-
-                button.textContent =
-                    "+ Create New Deck";
-
-            }
-
         }
-    );
 
-/* =====================================================
-   GENERATE FLASHCARD
-===================================================== */
-
-document
-    .getElementById("generatorForm")
-    .addEventListener(
-        "submit",
-        async function(event) {
-
-            event.preventDefault();
-
-
-            const word =
-                document
-                    .getElementById("word")
-                    .value
-                    .trim();
-
-
-            const language =
-                document
-                    .getElementById("language")
-                    .value;
-
-
-            const deck =
-                document
-                    .getElementById("deck")
-                    .value;
-
-
-            /* ---------------------------------------------
-               VALIDATION
-            --------------------------------------------- */
-
-            if (!word) {
-
-                showMessage(
-                    "Please enter a word.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            if (!language) {
-
-                showMessage(
-                    "Please select a language.",
-                    "error"
-                );
-
-
-                document
-                    .getElementById("language")
-                    .focus();
-
-
-                return;
-            }
-
-            const button =
-                document.getElementById(
-                    "generateButton"
-                );
-
-
-            button.disabled =
-                true;
-
-
-            button.textContent =
-                "Creating...";
-
-
-            hideMessage();
-
-
-            try {
-
-                /* -----------------------------------------
-                   SEND WORD + LANGUAGE TO FLASK
-                ----------------------------------------- */
-
-                const response =
-                    await fetch(
-                        "/generate",
-                        {
-                            method: "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "application/json"
-                            },
-
-                            body: JSON.stringify({
-
-                                word:
-                                    word,
-
-                                language:
-                                    language
-
-                            })
-                        }
-                    );
-
-
-                let data;
-
-
-                try {
-
-                    data =
-                        await response.json();
-
-                } catch (error) {
-
-                    throw new Error(
-                        "The server returned an invalid response."
-                    );
-
-                }
-
-
-                console.log(
-                    "Gemini response:",
-                    data
-                );
-
-
-                if (!response.ok || data.error) {
-
-                    throw new Error(
-                        data.error ||
-                        "Could not generate flashcard."
-                    );
-
-                }
-
-
-                /* -----------------------------------------
-                   VALIDATE RESPONSE
-                ----------------------------------------- */
-
-                if (
-                    !data.flashcards ||
-                    !Array.isArray(data.flashcards) ||
-                    data.flashcards.length === 0 ||
-                    !data.flashcards[0] ||
-                    typeof data.flashcards[0] !== "object" ||
-                    !data.flashcards[0].word
-                ) {
-
-                    throw new Error(
-                        "Gemini returned an invalid flashcard."
-                    );
-
-                }
-
-
-                currentCard =
-                    data.flashcards[0];
-
-
-                /* -----------------------------------------
-                   DISPLAY CARD
-                ----------------------------------------- */
-
-                displayCard(
-                    currentCard
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "Generate error:",
-                    error
-                );
-
-
-                showMessage(
-                    error.message ||
-                    "Something went wrong while generating the flashcard.",
-                    "error"
-                );
-
-
-            } finally {
-
-                button.disabled =
-                    false;
-
-
-                button.textContent =
-                    "✨ Create Flashcard";
-
-            }
-
-        }
-    );
-
-
-/* =====================================================
-   DISPLAY CARD
-===================================================== */
-
-function displayCard(card) {
-
-    document.getElementById(
-        "cardWord"
-    ).textContent =
-        card.word || "";
-
-
-    document.getElementById(
-        "cardPartOfSpeech"
-    ).textContent =
-        card.part_of_speech || "";
-
-
-    document.getElementById(
-        "cardPartOfSpeech2"
-    ).textContent =
-        card.part_of_speech || "";
-
-
-    document.getElementById(
-        "cardMeaning"
-    ).textContent =
-        card.meaning || "";
-
-
-    document.getElementById(
-        "cardGermanSentence"
-    ).textContent =
-        card.german_sentence || "";
-
-
-    document.getElementById(
-        "cardEnglishSentence"
-    ).textContent =
-        card.english_sentence || "";
-
-
-    /* ---------------------------------------------
-       TARGET LANGUAGE LABEL
-    --------------------------------------------- */
-
-    const language =
-        document
-            .getElementById("language")
-            .value;
-
-
-    document.getElementById(
-        "targetSentenceLabel"
-    ).textContent =
-        language
-            ? language + " sentence"
-            : "Target language sentence";
-
-
-    /* ---------------------------------------------
-       ARTICLE
-    --------------------------------------------- */
-
-    const article =
-        card.article || "";
-
-
-    document.getElementById(
-        "cardArticle"
-    ).textContent =
-        article;
-
-
-    document.getElementById(
-        "articleDetail"
-    ).style.display =
-        article
-            ? "flex"
-            : "none";
-
-
-    /* ---------------------------------------------
-       GENDER
-    --------------------------------------------- */
-
-    const gender =
-        card.gender || "";
-
-
-    document.getElementById(
-        "cardGender"
-    ).textContent =
-        gender;
-
-
-    document.getElementById(
-        "genderDetail"
-    ).style.display =
-        gender
-            ? "flex"
-            : "none";
-
-
-    /* ---------------------------------------------
-       PLURAL
-    --------------------------------------------- */
-
-    const plural =
-        card.plural || "";
-
-
-    document.getElementById(
-        "cardPlural"
-    ).textContent =
-        plural;
-
-
-    document.getElementById(
-        "pluralDetail"
-    ).style.display =
-        plural
-            ? "flex"
-            : "none";
-
-
-    /* ---------------------------------------------
-       SHOW FLASHCARD
-    --------------------------------------------- */
-
-    const section =
-        document.getElementById(
-            "flashcardSection"
-        );
-
-
-    section.style.display =
-        "block";
-
-
-    section.scrollIntoView({
-        behavior: "smooth",
-        block: "start"
-    });
-
+        const info = {
+            note_id: note.noteId || null,
+            word: existingWord,
+            deck: existingDeck
+        };
+        if (existingDeck === deck) return info;
+        if (!otherDeckDuplicate) otherDeckDuplicate = info;
+    }
+    return otherDeckDuplicate;
 }
 
-
-/* =====================================================
-   ADD TO ANKI
-===================================================== */
-
-document
-    .getElementById("addToAnkiButton")
-    .addEventListener(
-        "click",
-        async function() {
-
-            if (!currentCard) {
-
-                showMessage(
-                    "There is no flashcard to add.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            const deck =
-                document
-                    .getElementById("deck")
-                    .value;
-
-
-            const language =
-                document
-                    .getElementById("language")
-                    .value;
-
-
-            if (!deck) {
-
-                showMessage(
-                    "Please select an Anki deck.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            if (!language) {
-
-                showMessage(
-                    "Please select a language.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            const button =
-                document.getElementById(
-                    "addToAnkiButton"
-                );
-
-
-            button.disabled =
-                true;
-
-
-            button.textContent =
-                "Adding...";
-
-
-            hideMessage();
-
-
-            try {
-
-
-                // -------------------------------------------------
-// CHECK FOR DUPLICATE
-// -------------------------------------------------
-
-let allowDuplicate = false;
-
-try {
-
-    const duplicateCheckResponse =
-        await fetch(
-            "/check-duplicate",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-
-                    deck:
-                        deck,
-
-                    word:
-                        currentCard.word
-
-                })
-            }
-        );
-
-
-    const duplicateData =
-        await duplicateCheckResponse.json();
-
-
-    if (
-        duplicateData.duplicate
-    ) {
-
-        const duplicateLocation =
-    duplicateData.deck
-        ? `\n\nExisting deck: ${duplicateData.deck}`
-        : "";
-
-let duplicateMessage = "";
-
-if (
-    duplicateData.deck &&
-    duplicateData.deck === deck
-) {
-
-    duplicateMessage =
-        `"${duplicateData.word}" is already in your selected Anki deck.\n\n` +
-        `Do you still want to add this card?`;
-
-} else if (
-    duplicateData.deck
-) {
-
-    duplicateMessage =
-        `"${duplicateData.word}" is already in the Anki deck "${duplicateData.deck}".\n\n` +
-        `Do you still want to add this card?`;
-
-} else {
-
-    duplicateMessage =
-        `"${duplicateData.word}" already exists in your Anki collection.\n\n` +
-        `Do you still want to add this card?`;
+function showMessage(text, type) {
+    const msg = $("message");
+    msg.textContent = text;
+    msg.className = "message " + type;
+    msg.style.display = "block";
 }
 
+function hideMessage() {
+    $("message").style.display = "none";
+}
 
-const addAnyway =
-    confirm(
-        duplicateMessage
-    );
-
-
-        if (!addAnyway) {
-
-            button.disabled =
-                false;
-
-            button.textContent =
-                "＋ Add to Anki";
-
+async function loadDecks(showErrors = false) {
+    const deckSelect = $("deck");
+    deckSelect.innerHTML = "<option value=\"\">Checking Anki...</option>";
+    try {
+        const decks = await ankiRequest("deckNames");
+        deckSelect.innerHTML = "";
+        if (!Array.isArray(decks) || decks.length === 0) {
+            deckSelect.innerHTML = "<option value=\"\">No Anki decks found</option>";
             return;
         }
+        decks.forEach(name => {
+            const option = document.createElement("option");
+            option.value = name;
+            option.textContent = name;
+            deckSelect.appendChild(option);
+        });
+    } catch (error) {
+        console.error("Anki deck loading failed:", error);
+        deckSelect.innerHTML = "<option value=\"\">Anki not connected</option>";
+        if (showErrors) showMessage(formatAnkiConnectionError(error), "error");
+    }
+}
 
-
-        allowDuplicate =
-            true;
-
+$("createDeckButton").addEventListener("click", async function() {
+    const deckName = prompt("Enter the name of your new Anki deck:");
+    if (deckName === null) return;
+    const cleanName = deckName.trim();
+    if (!cleanName) {
+        alert("Please enter a deck name.");
+        return;
     }
 
-} catch (duplicateError) {
-
-    console.warn(
-        "Duplicate check failed:",
-        duplicateError
-    );
-
-}
-
-                // -------------------------------------------------
-                // ADD NOTE DIRECTLY TO THE USER'S ANKI CONNECT
-                // -------------------------------------------------
-
-                const word =
-                    currentCard.word || "";
-
-
-                const meaning =
-                    currentCard.meaning || "";
-
-
-                const partOfSpeech =
-                    currentCard.part_of_speech || "";
-
-
-                const article =
-                    currentCard.article || "";
-
-
-                const gender =
-                    currentCard.gender || "";
-
-
-                const plural =
-                    currentCard.plural || "";
-
-
-                const targetSentence =
-                    currentCard.german_sentence || "";
-
-
-                const englishSentence =
-                    currentCard.english_sentence || "";
-
-
-                // Escape HTML so generated card content is safe.
-                function escapeHtml(value) {
-
-                    return String(value)
-                        .replace(/&/g, "&amp;")
-                        .replace(/</g, "&lt;")
-                        .replace(/>/g, "&gt;")
-                        .replace(/"/g, "&quot;")
-                        .replace(/'/g, "&#039;");
-                }
-
-
-                const wordHtml =
-                    escapeHtml(word);
-
-
-                const meaningHtml =
-                    escapeHtml(meaning);
-
-
-                const partHtml =
-                    escapeHtml(partOfSpeech);
-
-
-                const articleHtml =
-                    escapeHtml(article);
-
-
-                const genderHtml =
-                    escapeHtml(gender);
-
-
-                const pluralHtml =
-                    escapeHtml(plural);
-
-
-                const targetSentenceHtml =
-                    escapeHtml(targetSentence);
-
-
-                const englishSentenceHtml =
-                    escapeHtml(englishSentence);
-
-// -------------------------------------------------
-// Generate pronunciation audio for the word
-// -------------------------------------------------
-
-let wordAudioData = null;
-let wordAudioFilename = null;
-
-try {
-
-    const wordAudioResponse =
-        await fetch(
-            "/pronunciation-audio",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-
-                    text:
-                        word,
-
-                    language:
-                        language
-
-                })
-            }
-        );
-
-
-    if (wordAudioResponse.ok) {
-
-        const wordAudioResult =
-            await wordAudioResponse.json();
-
-        console.log(
-            "WORD AUDIO RESULT:",
-            wordAudioResult
-        );
-
-
-        if (
-            wordAudioResult.success &&
-            wordAudioResult.data &&
-            wordAudioResult.filename
-        ) {
-
-            wordAudioData =
-                wordAudioResult.data;
-
-            wordAudioFilename =
-                wordAudioResult.filename;
-        }
-
+    const button = $("createDeckButton");
+    button.disabled = true;
+    button.textContent = "Creating...";
+    try {
+        await ankiRequest("createDeck", { deck: cleanName }, { retryOnConnection: false });
+        await loadDecks(true);
+        $("deck").value = cleanName;
+        showMessage("✓ Deck created successfully: " + cleanName, "success");
+    } catch (error) {
+        showMessage("Could not create deck: " + formatAnkiConnectionError(error), "error");
+    } finally {
+        button.disabled = false;
+        button.textContent = "+ Create New Deck";
     }
-
-} catch (audioError) {
-
-    console.warn(
-        "Word pronunciation audio could not be generated:",
-        audioError
-    );
-
-}
-
-
-// -------------------------------------------------
-// Generate pronunciation audio for the sentence
-// -------------------------------------------------
-
-let sentenceAudioData = null;
-let sentenceAudioFilename = null;
-
-try {
-
-    const sentenceAudioResponse =
-        await fetch(
-            "/pronunciation-audio",
-            {
-                method: "POST",
-
-                headers: {
-                    "Content-Type":
-                        "application/json"
-                },
-
-                body: JSON.stringify({
-
-                    text:
-                        targetSentence,
-
-                    language:
-                        language
-
-                })
-            }
-        );
-
-
-    if (sentenceAudioResponse.ok) {
-
-        const sentenceAudioResult =
-            await sentenceAudioResponse.json();
-
-        console.log(
-            "SENTENCE AUDIO RESULT:",
-            sentenceAudioResult
-        );
-
-
-        if (
-            sentenceAudioResult.success &&
-            sentenceAudioResult.data &&
-            sentenceAudioResult.filename
-        ) {
-
-            sentenceAudioData =
-                sentenceAudioResult.data;
-
-            sentenceAudioFilename =
-                sentenceAudioResult.filename;
-        }
-
-    }
-
-} catch (audioError) {
-
-    console.warn(
-        "Sentence pronunciation audio could not be generated:",
-        audioError
-    );
-
-}
-
-                const back = `
-<div>
-
-<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
-${wordHtml}
-</div>
-
-<b>Meaning:</b>
-${meaningHtml}
-
-<br><br>
-
-<b>Part of speech:</b>
-${partHtml}
-
-<br><br>
-
-<b>Article:</b>
-${articleHtml}
-
-<br>
-
-<b>Gender:</b>
-${genderHtml}
-
-<br>
-
-<b>Plural:</b>
-${pluralHtml}
-
-<br><br>
-
-<b>${escapeHtml(language)} sentence:</b>
-
-<br>
-
-${targetSentenceHtml}
-
-<br><br>
-
-<b>English sentence:</b>
-
-<br>
-
-${englishSentenceHtml}
-
-${wordAudioFilename
-    ? `
-<br><br>
-<b>🔊 Word Pronunciation:</b>
-<br>
-[sound:${wordAudioFilename}]
-`
-    : ""
-}
-
-${sentenceAudioFilename
-    ? `
-<br><br>
-<b>🔊 Sentence Pronunciation:</b>
-<br>
-[sound:${sentenceAudioFilename}]
-`
-    : ""
-}
-
-</div>
-`;
-
-
-                // -------------------------------------------------
-                // CREATE NOTE DIRECTLY IN LOCAL ANKI
-                // -------------------------------------------------
-
-                const response =
-                    await fetch(
-                        "http://127.0.0.1:8765",
-                        {
-                            method: "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "text/plain"
-                            },
-
-                            body: JSON.stringify({
-
-                                action:
-                                    "addNote",
-
-                                version:
-                                    6,
-
-                                params: {
-
-                                    note: {
-
-                                        deckName:
-                                            deck,
-
-                                        modelName:
-                                            "Basic",
-
-                                        fields: {
-
-                                            Front:
-                                                wordHtml,
-
-                                            Back:
-                                                back
-                                        },
-
-                                       options: {
-
-    allowDuplicate:
-        allowDuplicate
-},
-
-                                        tags: [
-
-                                            "ai-flashcards",
-
-                                            "language-" +
-                                                language
-                                                    .toLowerCase()
-                                                    .replace(
-                                                        /[^a-z0-9_-]/g,
-                                                        "-"
-                                                    )
-
-                                        ],
-
-                                      audio: [
-
-    ...(wordAudioData
-        ? [
-            {
-                filename:
-                    wordAudioFilename,
-
-                data:
-                    wordAudioData,
-
-                fields: []
-            }
-        ]
-        : []
-    ),
-
-    ...(sentenceAudioData
-        ? [
-            {
-                filename:
-                    sentenceAudioFilename,
-
-                data:
-                    sentenceAudioData,
-
-                fields: []
-            }
-        ]
-        : []
-    )
-
-]
-                                    }
-
-                                }
-
-                            })
-                        }
-                    );
-
-
-                if (!response.ok) {
-
-                    throw new Error(
-                        "AnkiConnect is not available."
-                    );
-                }
-
-
-                const data =
-                    await response.json();
-
-
-                if (data.error) {
-
-                    throw new Error(
-                        data.error
-                    );
-                }
-
-
-                if (!data.result) {
-
-                    throw new Error(
-                        "Anki did not return a note ID."
-                    );
-                }
-
-
-                button.textContent =
-                    "✓ Added to Anki";
-
-
-                button.style.background =
-                    "#27a879";
-
-
-                showMessage(
-                    "✓ Flashcard added to Anki!",
-                    "success"
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "Add to Anki error:",
-                    error
-                );
-
-
-                showMessage(
-                    error.message ||
-                    "Could not add the flashcard to Anki.",
-                    "error"
-                );
-
-
-                button.disabled =
-                    false;
-
-
-                button.textContent =
-                    "＋ Add to Anki";
-
-            }
-
-        }
-    );
-
-
-/* =====================================================
-   DOWNLOAD FLASHCARD
-===================================================== */
-
-document
-    .getElementById("downloadCardButton")
-    .addEventListener(
-        "click",
-        async function() {
-
-            if (!currentCard) {
-
-                showMessage(
-                    "There is no flashcard to download.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            const language =
-                document
-                    .getElementById("language")
-                    .value;
-
-
-            if (!language) {
-
-                showMessage(
-                    "Please select a language.",
-                    "error"
-                );
-
-                return;
-            }
-
-
-            const button =
-                document.getElementById(
-                    "downloadCardButton"
-                );
-
-
-            button.disabled =
-                true;
-
-
-            button.textContent =
-                "Preparing...";
-
-
-            hideMessage();
-
-
-            try {
-
-                const response =
-                    await fetch(
-                        "/download-flashcard",
-                        {
-                            method: "POST",
-
-                            headers: {
-                                "Content-Type":
-                                    "application/json"
-                            },
-
-                            body: JSON.stringify({
-
-                                card:
-                                    currentCard,
-
-                                language:
-                                    language
-
-                            })
-                        }
-                    );
-
-
-                if (!response.ok) {
-
-                    let data;
-
-                    try {
-
-                        data =
-                            await response.json();
-
-                    } catch (error) {
-
-                        throw new Error(
-                            "The server returned an invalid response."
-                        );
-
-                    }
-
-                    throw new Error(
-                        data.error ||
-                        "Could not download the flashcard."
-                    );
-                }
-
-
-                const blob =
-                    await response.blob();
-
-
-                const downloadUrl =
-                    window.URL.createObjectURL(
-                        blob
-                    );
-
-
-                const link =
-                    document.createElement(
-                        "a"
-                    );
-
-
-                link.href =
-                    downloadUrl;
-
-
-                const word =
-                    currentCard.word ||
-                    "flashcard";
-
-
-                const safeWord =
-                    word.replace(
-                        /[^a-zA-Z0-9_-]/g,
-                        "_"
-                    );
-
-
-                link.download =
-                    "AI_Flashcard_" +
-                    safeWord +
-                    ".apkg";
-
-
-                document.body.appendChild(
-                    link
-                );
-
-
-                link.click();
-
-
-                link.remove();
-
-
-                window.URL.revokeObjectURL(
-                    downloadUrl
-                );
-
-
-                button.textContent =
-                    "✓ Downloaded";
-
-
-                showMessage(
-                    "✓ Anki flashcard downloaded successfully!",
-                    "success"
-                );
-
-
-            } catch (error) {
-
-                console.error(
-                    "Download error:",
-                    error
-                );
-
-
-                showMessage(
-                    error.message ||
-                    "Could not download the flashcard.",
-                    "error"
-                );
-
-
-            } finally {
-
-                button.disabled =
-                    false;
-
-
-                button.textContent =
-                    "↓ Download Flashcard";
-
-            }
-
-        }
-    );
-
-/* =====================================================
-   NEW CARD
-===================================================== */
-
-document
-    .getElementById("newCardButton")
-    .addEventListener(
-        "click",
-        function() {
-
-            document
-                .getElementById("word")
-                .focus();
-
-
-            document
-                .getElementById("word")
-                .select();
-
-
-            document
-                .getElementById("flashcardSection")
-                .style.display =
-                "none";
-
-
-            currentCard =
-                null;
-
-
-            const addButton =
-                document.getElementById(
-                    "addToAnkiButton"
-                );
-
-
-            addButton.disabled =
-                false;
-
-
-            addButton.textContent =
-                "＋ Add to Anki";
-
-
-            addButton.style.background =
-                "";
-
-
-            hideMessage();
-
-        }
-    );
-
-
-/* =====================================================
-   PRONUNCIATION
-===================================================== */
-
-document
-    .getElementById("pronounceButton")
-    .addEventListener(
-        "click",
-        function() {
-
-            if (
-                !currentCard ||
-                !currentCard.word
-            ) {
-
-                return;
-            }
-
-
-            const language =
-                document
-                    .getElementById("language")
-                    .value;
-
-
-            pronounceWord(
-                currentCard.word,
-                language
-            );
-
-        }
-    );
-
-
-/* =====================================================
-   SENTENCE PRONUNCIATION
-===================================================== */
-
-document
-    .getElementById("pronounceSentenceButton")
-    .addEventListener(
-        "click",
-        function() {
-
-            if (
-                !currentCard ||
-                !currentCard.german_sentence
-            ) {
-
-                return;
-            }
-
-
-            const language =
-                document
-                    .getElementById("language")
-                    .value;
-
-
-            pronounceWord(
-                currentCard.german_sentence,
-                language
-            );
-
-        }
-    );
-
-
-function pronounceWord(
-    word,
-    language
-) {
+});
+
+$("generatorForm").addEventListener("submit", async function(event) {
+    event.preventDefault();
+    const word = $("word").value.trim();
+    const language = $("language").value;
 
     if (!word) {
-
+        showMessage("Please enter a word.", "error");
+        return;
+    }
+    if (!language) {
+        showMessage("Please select a language.", "error");
+        $("language").focus();
         return;
     }
 
+    const button = $("generateButton");
+    button.disabled = true;
+    button.textContent = "Creating...";
+    hideMessage();
 
-    if (
-        !("speechSynthesis" in window)
-    ) {
+    try {
+        const response = await fetch("/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ word, language })
+        });
+        let data;
+        try { data = await response.json(); }
+        catch { throw new Error("The server returned an invalid response."); }
 
-        alert(
-            "Your browser does not support voice pronunciation."
-        );
+        if (!response.ok || data.error) {
+            throw new Error(data.error || "Could not generate flashcard.");
+        }
+        if (!Array.isArray(data.flashcards) || !data.flashcards[0]) {
+            throw new Error("The server returned an invalid flashcard.");
+        }
 
-        return;
+        currentCard = data.flashcards[0];
+        displayCard(currentCard);
+    } catch (error) {
+        console.error("Generation failed:", error);
+        showMessage(error.message || "Something went wrong while generating the flashcard.", "error");
+    } finally {
+        button.disabled = false;
+        button.textContent = "✨ Create Flashcard";
     }
+});
 
+function displayCard(card) {
+    $("cardWord").textContent = card.word || "";
+    $("cardPartOfSpeech").textContent = card.part_of_speech || "";
+    $("cardPartOfSpeech2").textContent = card.part_of_speech || "";
+    $("cardMeaning").textContent = card.meaning || "";
+    $("cardTargetSentence").textContent = card.target_sentence || "";
+    $("cardEnglishSentence").textContent = card.english_sentence || "";
 
-    window.speechSynthesis.cancel();
+    const language = $("language").value;
+    $("targetSentenceLabel").textContent = language ? `${language} sentence` : "Target language sentence";
 
+    $("cardArticle").textContent = card.article || "";
+    $("articleDetail").style.display = card.article ? "flex" : "none";
+    $("cardGender").textContent = card.gender || "";
+    $("genderDetail").style.display = card.gender ? "flex" : "none";
+    $("cardPlural").textContent = card.plural || "";
+    $("pluralDetail").style.display = card.plural ? "flex" : "none";
 
-    const utterance =
-        new SpeechSynthesisUtterance(
-            word
-        );
+    $("flashcardSection").style.display = "block";
+    $("flashcardSection").scrollIntoView({ behavior: "smooth", block: "start" });
 
-
-    /* ---------------------------------------------
-       Browser speech-language mapping
-    --------------------------------------------- */
-
-    const speechLanguages = {
-
-        "English":
-            "en-US",
-
-        "Spanish":
-            "es-ES",
-
-        "French":
-            "fr-FR",
-
-        "German":
-            "de-DE",
-
-        "Italian":
-            "it-IT",
-
-        "Portuguese":
-            "pt-PT",
-
-        "Russian":
-            "ru-RU",
-
-        "Japanese":
-            "ja-JP",
-
-        "Korean":
-            "ko-KR",
-
-        "Chinese":
-            "zh-CN",
-
-        "Arabic":
-            "ar-SA",
-
-        "Hindi":
-            "hi-IN",
-
-        "Turkish":
-            "tr-TR",
-
-        "Dutch":
-            "nl-NL",
-
-        "Polish":
-            "pl-PL",
-
-        "Ukrainian":
-            "uk-UA",
-
-        "Swedish":
-            "sv-SE",
-
-        "Greek":
-            "el-GR",
-
-        "Indonesian":
-            "id-ID",
-
-        "Vietnamese":
-            "vi-VN"
-
-    };
-
-
-    utterance.lang =
-        speechLanguages[language]
-        || "en-US";
-
-
-    utterance.rate =
-        0.85;
-
-
-    utterance.pitch =
-        1.0;
-
-
-    window.speechSynthesis.speak(
-        utterance
-    );
-
+    const addButton = $("addToAnkiButton");
+    addButton.disabled = false;
+    addButton.textContent = "＋ Add to Anki";
+    addButton.style.background = "";
 }
 
-
-/* =====================================================
-   START APPLICATION
-===================================================== */
-
-document.addEventListener(
-    "DOMContentLoaded",
-    function() {
-
-        loadDecks();
-
+async function createLocalAnkiAudio(text, language, kind) {
+    if (!text) return null;
+    const response = await fetch("/pronunciation-audio", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text, language })
+    });
+    let data;
+    try { data = await response.json(); }
+    catch { throw new Error("The pronunciation server returned an invalid response."); }
+    if (!response.ok || data.error || !data.data) {
+        throw new Error(data.error || "Could not generate pronunciation audio.");
     }
-);
 
-
-
-/* =====================================================
-   INSTRUCTIONS MODAL
-===================================================== */
-
-document
-    .getElementById("instructionsButton")
-    .addEventListener(
-        "click",
-        function() {
-
-            document
-                .getElementById("instructionsModal")
-                .classList
-                .add("open");
-
-        }
+    const safe = String(text).replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 50) || kind;
+    const filename = `ai_flashcard_${kind}_${Date.now()}_${Math.random().toString(36).slice(2,7)}_${safe}.mp3`;
+    const storedFilename = await ankiRequest(
+        "storeMediaFile",
+        { filename, data: data.data },
+        { retryOnConnection: false }
     );
 
+    // AnkiConnect implementations differ here: the original API returns
+    // null on successful storage, while some forks return the stored filename.
+    // A null result is therefore a successful store, not an error.
+    if (storedFilename !== null && storedFilename !== undefined && storedFilename !== filename) {
+        console.warn("AnkiConnect stored the media under a different filename:", storedFilename);
+        return String(storedFilename);
+    }
 
-document
-    .getElementById("closeInstructionsButton")
-    .addEventListener(
-        "click",
-        function() {
+    return filename;
+}
 
-            document
-                .getElementById("instructionsModal")
-                .classList
-                .remove("open");
+function buildAnkiBack(card, language, wordAudio, sentenceAudio) {
+    let audio = "";
+    if (wordAudio) audio += `<br><br><b>🔊 Word Pronunciation:</b><br>[sound:${escapeHtml(wordAudio)}]`;
+    if (sentenceAudio) audio += `<br><br><b>🔊 Sentence Pronunciation:</b><br>[sound:${escapeHtml(sentenceAudio)}]`;
+    return `
+<div>
+<div style="font-size:28px;font-weight:bold;margin-bottom:20px;">${escapeHtml(card.word || "")}</div>
+<b>Meaning:</b> ${escapeHtml(card.meaning || "")}<br><br>
+<b>Part of speech:</b> ${escapeHtml(card.part_of_speech || "")}<br><br>
+<b>Article:</b> ${escapeHtml(card.article || "")}<br>
+<b>Gender:</b> ${escapeHtml(card.gender || "")}<br>
+<b>Plural:</b> ${escapeHtml(card.plural || "")}<br><br>
+<b>${escapeHtml(language)} sentence:</b><br>${escapeHtml(card.target_sentence || "")}<br><br>
+<b>English sentence:</b><br>${escapeHtml(card.english_sentence || "")}
+${audio}
+</div>`;
+}
 
+async function addCardToLocalAnki(deck, language, card, allowDuplicate) {
+    const storedMedia = [];
+    try {
+        let wordAudio = null;
+        try {
+            wordAudio = await createLocalAnkiAudio(card.word, language, "word");
+            if (wordAudio) storedMedia.push(wordAudio);
+        } catch (error) {
+            console.error("Word pronunciation could not be stored in Anki:", error);
+            throw new Error("Could not store word pronunciation in Anki: " + (error.message || error));
         }
-    );
 
+        let sentenceAudio = null;
+        try {
+            sentenceAudio = await createLocalAnkiAudio(card.target_sentence, language, "sentence");
+            if (sentenceAudio) storedMedia.push(sentenceAudio);
+        } catch (error) {
+            console.error("Sentence pronunciation could not be stored in Anki:", error);
+            throw new Error("Could not store sentence pronunciation in Anki: " + (error.message || error));
+        }
 
-document
-    .getElementById("instructionsModal")
-    .addEventListener(
-        "click",
-        function(event) {
-
-            if (event.target.id === "instructionsModal") {
-
-                document
-                    .getElementById("instructionsModal")
-                    .classList
-                    .remove("open");
-
+        const noteId = await ankiRequest("addNote", {
+            note: {
+                deckName: deck,
+                modelName: "Basic",
+                fields: {
+                    Front: escapeHtml(card.word || ""),
+                    Back: buildAnkiBack(card, language, wordAudio, sentenceAudio)
+                },
+                options: { allowDuplicate: Boolean(allowDuplicate) },
+                tags: [
+                    "ai-flashcards",
+                    `language-${String(language).toLowerCase().replace(/[^a-zA-Z0-9_-]+/g, "-")}`
+                ]
             }
-
+        }, { retryOnConnection: false });
+        if (!noteId) throw new Error("Anki did not return a note ID.");
+        return noteId;
+    } catch (error) {
+        for (const filename of storedMedia) {
+            try { await ankiRequest("deleteMediaFile", { filename }, { retryOnConnection: false }); }
+            catch (cleanupError) { console.warn("Could not clean up media:", cleanupError); }
         }
-    );
-
-
-document.addEventListener(
-    "keydown",
-    function(event) {
-
-        if (event.key === "Escape") {
-
-            document
-                .getElementById("instructionsModal")
-                .classList
-                .remove("open");
-
-        }
-
+        throw error;
     }
-);
+}
 
+$("addToAnkiButton").addEventListener("click", async function() {
+    if (!currentCard) {
+        showMessage("There is no flashcard to add.", "error");
+        return;
+    }
+    const deck = $("deck").value;
+    const language = $("language").value;
+    if (!deck) { showMessage("Please select an Anki deck.", "error"); return; }
+    if (!language) { showMessage("Please select a language.", "error"); return; }
+
+    const button = $("addToAnkiButton");
+    button.disabled = true;
+    button.textContent = "Adding...";
+    hideMessage();
+
+    try {
+        let allowDuplicate = false;
+        const duplicate = await findLocalDuplicateWord(deck, currentCard.word);
+        if (duplicate) {
+            const message = duplicate.deck === deck
+                ? `"${duplicate.word}" is already in your selected Anki deck.\n\nDo you still want to add this card?`
+                : `"${duplicate.word}" is already in the Anki deck "${duplicate.deck || "another deck"}".\n\nDo you still want to add this card?`;
+            if (!confirm(message)) {
+                button.disabled = false;
+                button.textContent = "＋ Add to Anki";
+                return;
+            }
+            allowDuplicate = true;
+        }
+
+        await addCardToLocalAnki(deck, language, currentCard, allowDuplicate);
+        button.textContent = "✓ Added to Anki";
+        button.style.background = "#27a879";
+        showMessage("✓ Flashcard added to Anki!", "success");
+    } catch (error) {
+        console.error("Add to Anki failed:", error);
+        showMessage(formatAnkiConnectionError(error), "error");
+        button.disabled = false;
+        button.textContent = "＋ Add to Anki";
+        button.style.background = "";
+    }
+});
+
+$("downloadCardButton").addEventListener("click", async function() {
+    if (!currentCard) { showMessage("There is no flashcard to download.", "error"); return; }
+    const language = $("language").value;
+    const deck = $("deck").value;
+    if (!language) { showMessage("Please select a language.", "error"); return; }
+
+    const button = $("downloadCardButton");
+    button.disabled = true;
+    button.textContent = "Preparing...";
+    hideMessage();
+    try {
+        const response = await fetch("/download-flashcard", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ card: currentCard, language, deck })
+        });
+        if (!response.ok) {
+            let errorData = {};
+            try { errorData = await response.json(); } catch {}
+            throw new Error(errorData.error || "Could not download the flashcard.");
+        }
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        const safeWord = (currentCard.word || "flashcard").replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 40);
+        link.download = `AI_Flashcard_${safeWord}.apkg`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+        showMessage("✓ Anki flashcard downloaded successfully!", "success");
+    } catch (error) {
+        console.error("Download failed:", error);
+        showMessage(error.message || "Could not download the flashcard.", "error");
+    } finally {
+        button.disabled = false;
+        button.textContent = "↓ Download Flashcard";
+    }
+});
+
+$("newCardButton").addEventListener("click", function() {
+    $("flashcardSection").style.display = "none";
+    currentCard = null;
+    const addButton = $("addToAnkiButton");
+    addButton.disabled = false;
+    addButton.textContent = "＋ Add to Anki";
+    addButton.style.background = "";
+    hideMessage();
+    $("word").focus();
+    $("word").select();
+});
+
+async function playServerPronunciation(text, language, sourceButton = null) {
+    try {
+        const activeButton = sourceButton || (text === currentCard?.word ? $("pronounceButton") : $("pronounceSentenceButton"));
+        if (activeButton) activeButton.disabled = true;
+        const response = await fetch("/pronunciation-audio", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text, language })
+        });
+        const data = await response.json();
+        if (!response.ok || data.error || !data.data) throw new Error(data.error || "Audio unavailable.");
+        const audio = new Audio("data:audio/mpeg;base64," + data.data);
+        await audio.play();
+    } catch (error) {
+        console.error("Server pronunciation failed:", error);
+        showMessage(error.message || "Could not play pronunciation.", "error");
+    } finally {
+        const wordButton = $("pronounceButton");
+        const sentenceButton = $("pronounceSentenceButton");
+        if (wordButton) wordButton.disabled = false;
+        if (sentenceButton) sentenceButton.disabled = false;
+    }
+}
+
+function browserPronunciation(text, language) {
+    return new Promise((resolve, reject) => {
+        if (!("speechSynthesis" in window)) return reject(new Error("Browser speech synthesis is unavailable."));
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        const languages = {
+            English:"en-US", Spanish:"es-ES", French:"fr-FR", German:"de-DE", Italian:"it-IT", Portuguese:"pt-PT",
+            Russian:"ru-RU", Japanese:"ja-JP", Korean:"ko-KR", Chinese:"zh-CN", Arabic:"ar-SA", Hindi:"hi-IN",
+            Turkish:"tr-TR", Dutch:"nl-NL", Polish:"pl-PL", Ukrainian:"uk-UA", Swedish:"sv-SE", Greek:"el-GR",
+            Indonesian:"id-ID", Vietnamese:"vi-VN"
+        };
+        utterance.lang = languages[language] || "en-US";
+        utterance.rate = 0.85;
+        utterance.pitch = 1.0;
+        utterance.onend = resolve;
+        utterance.onerror = () => reject(new Error("Browser pronunciation failed."));
+        window.speechSynthesis.speak(utterance);
+    });
+}
+
+async function pronounce(text, language, sourceButton = null) {
+    if (!text) return;
+    try {
+        await browserPronunciation(text, language);
+    } catch {
+        await playServerPronunciation(text, language, sourceButton);
+    }
+}
+
+$("pronounceButton").addEventListener("click", function() {
+    if (currentCard?.word) pronounce(currentCard.word, $("language").value, $("pronounceButton"));
+});
+$("pronounceSentenceButton").addEventListener("click", function() {
+    if (currentCard?.target_sentence) pronounce(currentCard.target_sentence, $("language").value, $("pronounceSentenceButton"));
+});
+
+function openInstructions() {
+    $("instructionsModal").classList.add("open");
+}
+function closeInstructions() {
+    $("instructionsModal").classList.remove("open");
+}
+$("instructionsButton").addEventListener("click", openInstructions);
+$("closeInstructionsButton").addEventListener("click", closeInstructions);
+$("instructionsModal").addEventListener("click", e => { if (e.target.id === "instructionsModal") closeInstructions(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeInstructions(); });
+
+document.addEventListener("DOMContentLoaded", async function() {
+    try {
+        await connectToAnki();
+        await loadDecks(false);
+    } catch (error) {
+        console.error("Startup Anki connection failed:", error);
+        $("deck").innerHTML = '<option value="">Anki not connected</option>';
+        showMessage(error.message, "error");
+    }
+});
 </script>
-
-
 </body>
-
 </html>

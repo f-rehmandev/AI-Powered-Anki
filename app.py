@@ -1,1758 +1,578 @@
-from flask import Flask, render_template, request, jsonify, send_file
-import os
-import json
-import requests
 import base64
-import re
 import hashlib
-import tempfile
-import uuid
+import html
 import io
+import json
+import logging
+import os
+import re
+import tempfile
+import time
+import uuid
+from collections import defaultdict, deque
 from html import escape
+from pathlib import Path
+from threading import Lock
 
+import genanki
 from dotenv import load_dotenv
+from flask import Flask, jsonify, render_template, request, send_file
 from google import genai
+from google.genai import types
 from gtts import gTTS
 from gtts.lang import tts_langs
-import genanki
-
-
-app = Flask(__name__)
 
 load_dotenv()
 
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 128 * 1024
+
+
+@app.errorhandler(413)
+def request_entity_too_large(_error):
+    return jsonify({"error": "Request is too large."}), 413
+
 
 # =========================================================
-# GEMINI SETUP
+# CONFIGURATION
 # =========================================================
 
-client = genai.Client(
-    api_key=os.environ["GEMINI_API_KEY"]
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+ANKI_CONNECT_URL = os.getenv("ANKI_CONNECT_URL", "http://127.0.0.1:8765").strip()
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "0") == "1"
+
+def env_int(name, default, minimum=1):
+    raw = os.getenv(name, str(default)).strip()
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger_temp = logging.getLogger("ai_flashcards.config")
+        logger_temp.warning("Invalid integer for %s=%r; using %s.", name, raw, default)
+        value = default
+    return max(minimum, value)
+
+PORT = env_int("PORT", 5000, minimum=1)
+MAX_WORD_LENGTH = env_int("MAX_WORD_LENGTH", 120, minimum=1)
+MAX_TOPIC_LENGTH = env_int("MAX_TOPIC_LENGTH", 500, minimum=1)
+MAX_LANGUAGE_LENGTH = 40
+MAX_CARD_COUNT = env_int("MAX_CARD_COUNT", 10, minimum=1)
+GENERATION_RATE_LIMIT = env_int("GENERATION_RATE_LIMIT", 10, minimum=1)
+GENERATION_RATE_WINDOW = env_int("GENERATION_RATE_WINDOW", 60, minimum=1)
+TTS_RATE_LIMIT = env_int("TTS_RATE_LIMIT", 20, minimum=1)
+TTS_RATE_WINDOW = env_int("TTS_RATE_WINDOW", 60, minimum=1)
+DOWNLOAD_RATE_LIMIT = env_int("DOWNLOAD_RATE_LIMIT", 10, minimum=1)
+DOWNLOAD_RATE_WINDOW = env_int("DOWNLOAD_RATE_WINDOW", 60, minimum=1)
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ai_flashcards")
+
+_gemini_client = None
+_tts_languages_cache = None
+_rate_lock = Lock()
+_rate_buckets = defaultdict(deque)
+
+CARD_FIELDS = (
+    "word",
+    "meaning",
+    "part_of_speech",
+    "article",
+    "gender",
+    "plural",
+    "target_sentence",
+    "english_sentence",
 )
 
+TTS_LANGUAGE_CANDIDATES = {
+    "english": ("en",),
+    "spanish": ("es",),
+    "french": ("fr",),
+    "german": ("de",),
+    "italian": ("it",),
+    "portuguese": ("pt", "pt-PT", "pt-BR"),
+    "russian": ("ru",),
+    "japanese": ("ja",),
+    "korean": ("ko",),
+    "chinese": ("zh-CN", "zh-TW", "zh"),
+    "arabic": ("ar",),
+    "hindi": ("hi",),
+    "turkish": ("tr",),
+    "dutch": ("nl",),
+    "polish": ("pl",),
+    "ukrainian": ("uk",),
+    "swedish": ("sv",),
+    "greek": ("el",),
+    "indonesian": ("id",),
+    "vietnamese": ("vi",),
+}
+
+SUPPORTED_LANGUAGES = tuple(
+    name.title() for name in TTS_LANGUAGE_CANDIDATES.keys()
+)
 
 # =========================================================
-# ANKI CONNECT SETUP
+# HELPERS
 # =========================================================
 
-ANKI_CONNECT_URL = "http://127.0.0.1:8765"
+
+def json_data():
+    data = request.get_json(silent=True)
+    return data if isinstance(data, dict) else {}
 
 
-def anki_request(action, params=None):
+def client_identifier():
+    # Use the immediate peer by default. If you deploy behind a trusted
+    # reverse proxy, configure the proxy so REMOTE_ADDR is reliable.
+    return request.remote_addr or "unknown"
 
-    payload = {
-        "action": action,
-        "version": 6
-    }
 
-    if params is not None:
-        payload["params"] = params
+def rate_limit(bucket_name, limit, window_seconds):
+    now = time.monotonic()
+    key = (bucket_name, client_identifier())
+    with _rate_lock:
+        bucket = _rate_buckets[key]
+        cutoff = now - window_seconds
+        while bucket and bucket[0] <= cutoff:
+            bucket.popleft()
+        if len(bucket) >= limit:
+            retry_after = max(1, int(window_seconds - (now - bucket[0])))
+            return False, retry_after
+        bucket.append(now)
+        return True, 0
+
+
+def rate_limit_response(retry_after):
+    response = jsonify({
+        "error": "Too many requests. Please wait a moment and try again."
+    })
+    response.status_code = 429
+    response.headers["Retry-After"] = str(retry_after)
+    return response
+
+
+def validate_text(value, name, max_length):
+    value = str(value or "").strip()
+    if len(value) > max_length:
+        raise ValueError(f"{name} is too long. Maximum length is {max_length} characters.")
+    return value
+
+
+def normalize_text(value):
+    return re.sub(r"\s+", " ", str(value or "")).strip().casefold()
+
+
+def normalize_anki_word(value):
+    cleaned = re.sub(r"<[^>]*>", "", str(value or ""))
+    cleaned = html.unescape(cleaned).replace("\xa0", " ")
+    return normalize_text(cleaned)
+
+
+def safe_filename(value, fallback="audio", max_length=50):
+    cleaned = re.sub(r"[^a-zA-Z0-9äöüÄÖÜß_-]+", "_", str(value or ""))
+    cleaned = cleaned.strip("_")
+    return cleaned[:max_length] or fallback
+
+# =========================================================
+# GEMINI
+# =========================================================
+
+
+def get_gemini_client():
+    global _gemini_client
+    if _gemini_client is not None:
+        return _gemini_client
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is not configured. Add it to your environment or .env file."
+        )
+    _gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    return _gemini_client
+
+
+FLASHCARD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "word": {"type": "string"},
+        "meaning": {"type": "string"},
+        "part_of_speech": {"type": "string"},
+        "article": {"type": "string"},
+        "gender": {"type": "string"},
+        "plural": {"type": "string"},
+        "target_sentence": {"type": "string"},
+        "english_sentence": {"type": "string"},
+    },
+    "required": list(CARD_FIELDS),
+}
+
+FLASHCARDS_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "flashcards": {
+            "type": "array",
+            "items": FLASHCARD_SCHEMA,
+        }
+    },
+    "required": ["flashcards"],
+}
+
+
+def gemini_generate(prompt, schema):
+    client = get_gemini_client()
+    try:
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=schema,
+                temperature=0.2,
+            ),
+        )
+    except Exception as exc:
+        logger.exception("Gemini request failed")
+        raise RuntimeError("The AI service could not complete the request.") from exc
+
+    text = getattr(response, "text", None)
+    if not text:
+        raise RuntimeError("The AI returned an empty response.")
 
     try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        logger.error("Gemini returned invalid JSON: %s", text[:500])
+        raise RuntimeError("The AI returned invalid structured data.") from exc
 
-        response = requests.post(
-            ANKI_CONNECT_URL,
-            json=payload,
-            timeout=10
-        )
 
-        response.raise_for_status()
+def validate_card(card):
+    if not isinstance(card, dict):
+        return False
+    if any(not isinstance(card.get(field, ""), str) for field in CARD_FIELDS):
+        return False
+    return all(
+        card.get(field, "").strip()
+        for field in ("word", "meaning", "part_of_speech", "target_sentence", "english_sentence")
+    )
 
-        result = response.json()
 
-        return result
 
-    except requests.exceptions.ConnectionError:
+def generate_word_card(word, language):
+    source_word_json = json.dumps(word, ensure_ascii=False)
+    prompt = f"""
+You are an expert language teacher creating a vocabulary flashcard.
+Create exactly ONE useful flashcard from the learner's English input word.
 
-        raise Exception(
-            "Could not connect to AnkiConnect. "
-            "Make sure Anki is running and the AnkiConnect add-on is installed."
-        )
+English input word: {source_word_json}
+Target language: {language}
 
-    except requests.exceptions.Timeout:
+IMPORTANT LANGUAGE DIRECTION:
+- The learner enters the vocabulary word in English.
+- Translate that English input into the selected target language.
+- The `word` field must contain the target-language vocabulary item, NOT the original
+  English input.
+- The `meaning` field must contain the English meaning of the target-language word.
+- Do NOT put a target-language translation into the `meaning` field.
 
-        raise Exception(
-            "AnkiConnect request timed out."
-        )
+Example:
+English input: "cook"
+Target language: German
+A correct result has a German word/form in `word` (for example, "kocht" when that
+form is used in the example sentence) and an English meaning such as "cook" or
+"to cook" in `meaning`.
 
-    except requests.exceptions.RequestException as e:
+The target-language word/form should naturally match the example sentence. If an
+inflected form is used in the sentence, the `word` field may use that same form.
 
-        raise Exception(
-            f"AnkiConnect connection error: {str(e)}"
-        )
+Rules:
+- Use an accurate English meaning.
+- Use the correct part of speech.
+- Fill article/gender/plural when they genuinely apply; otherwise use an empty string.
+- target_sentence must be a natural example sentence in the target language and
+  should use the exact target-language form shown in `word`.
+- english_sentence must accurately translate target_sentence.
+- Every field must be a string.
+Return only the required structured JSON object.
+"""
+
+    card = gemini_generate(prompt, FLASHCARD_SCHEMA)
+    if not isinstance(card, dict):
+        raise ValueError("The AI returned an invalid flashcard object.")
+
+    if not validate_card(card):
+        raise ValueError("The AI returned an invalid flashcard structure.")
+    return card
 
 
 # =========================================================
-# GTTS LANGUAGE CACHE
+# TTS
 # =========================================================
-#
-# tts_langs() fetches the supported-language list from Google
-# over the network. Calling it on every single pronunciation
-# request is slow and wasteful, so we fetch it once and reuse
-# it. If the fetch fails at import time (e.g. no internet yet),
-# we fall back to fetching lazily on first use.
-
-_TTS_LANGS_CACHE = None
 
 
-def get_tts_langs():
-
-    global _TTS_LANGS_CACHE
-
-    if _TTS_LANGS_CACHE is None:
-
-        _TTS_LANGS_CACHE = tts_langs()
-
-    return _TTS_LANGS_CACHE
+def get_tts_languages():
+    global _tts_languages_cache
+    if _tts_languages_cache is not None:
+        return _tts_languages_cache
+    try:
+        _tts_languages_cache = tts_langs()
+    except Exception:
+        logger.exception("Could not load gTTS languages")
+        _tts_languages_cache = {}
+    return _tts_languages_cache
 
 
 def get_language_code(language):
+    normalized = str(language or "").strip().lower()
+    available = get_tts_languages()
+    available_lower = {code.lower(): code for code in available}
 
-    available_languages = get_tts_langs()
+    for candidate in TTS_LANGUAGE_CANDIDATES.get(normalized, ()):
+        if candidate.lower() in available_lower:
+            return available_lower[candidate.lower()]
 
-    for code, language_name in available_languages.items():
-
-        if language_name.lower() == language.lower():
-
+    for code, label in available.items():
+        label_normalized = str(label).strip().lower()
+        if label_normalized == normalized:
             return code
 
     return None
 
 
+def create_pronunciation_file(text, language, kind="audio", slow=False):
+    code = get_language_code(language)
+    if not code:
+        raise RuntimeError(f"Pronunciation is not available for {language}.")
+    filename = (
+        f"ai_flashcard_{kind}_{safe_filename(text)}_"
+        f"{uuid.uuid4().hex[:10]}.mp3"
+    )
+    # The filesystem basename must exactly match the filename referenced by
+    # Anki's [sound:...] tag. The filename itself is already unique.
+    path = os.path.join(tempfile.gettempdir(), filename)
+    try:
+        gTTS(text=text, lang=code, slow=slow).save(path)
+        return path, filename
+    except Exception as exc:
+        if os.path.exists(path):
+            os.remove(path)
+        raise RuntimeError("Pronunciation generation failed.") from exc
+
 # =========================================================
-# HOME PAGE
+# ANKI HTML
 # =========================================================
 
-@app.route("/")
+
+def card_values(card):
+    return {field: str(card.get(field, "")).strip() for field in CARD_FIELDS}
+
+
+def build_anki_back(card, language, word_audio=None, sentence_audio=None):
+    values = card_values(card)
+    audio_html = ""
+    if word_audio:
+        audio_html += (
+            "<br><br><b>🔊 Word Pronunciation:</b><br>"
+            f"[sound:{escape(word_audio)}]"
+        )
+    if sentence_audio:
+        audio_html += (
+            "<br><br><b>🔊 Sentence Pronunciation:</b><br>"
+            f"[sound:{escape(sentence_audio)}]"
+        )
+
+    return f"""
+<div>
+<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
+{escape(values['word'])}
+</div>
+<b>Meaning:</b> {escape(values['meaning'])}
+<br><br>
+<b>Part of speech:</b> {escape(values['part_of_speech'])}
+<br><br>
+<b>Article:</b> {escape(values['article'])}
+<br>
+<b>Gender:</b> {escape(values['gender'])}
+<br>
+<b>Plural:</b> {escape(values['plural'])}
+<br><br>
+<b>{escape(language)} sentence:</b>
+<br>
+{escape(values['target_sentence'])}
+<br><br>
+<b>English sentence:</b>
+<br>
+{escape(values['english_sentence'])}
+{audio_html}
+</div>
+"""
+
+# =========================================================
+# ROUTES
+# =========================================================
+
+@app.get("/")
 def home():
     return render_template("index.html")
 
 
-# =========================================================
-# GET ANKI DECKS
-# =========================================================
-
-@app.route("/decks")
-def get_decks():
-
-    try:
-
-        result = anki_request("deckNames")
-
-        if result.get("error"):
-
-            return jsonify({
-                "error": result["error"]
-            }), 500
-
-        decks = result.get(
-            "result",
-            []
-        )
-
-        return jsonify({
-            "decks": decks
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-
-# =========================================================
-# CREATE NEW ANKI DECK
-# =========================================================
-
-@app.route("/create-deck", methods=["POST"])
-def create_deck():
-
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "error": "No data received."
-        }), 400
-
-    deck_name = str(
-        data.get(
-            "deck_name",
-            ""
-        )
-    ).strip()
-
-    if not deck_name:
-
-        return jsonify({
-            "error": "Please enter a deck name."
-        }), 400
-
-    try:
-
-        result = anki_request(
-            "createDeck",
-            {
-                "deck": deck_name
-            }
-        )
-
-        if result.get("error"):
-
-            return jsonify({
-                "error": result["error"]
-            }), 500
-
-        return jsonify({
-            "success": True,
-            "deck": deck_name
-        })
-
-    except Exception as e:
-
-        return jsonify({
-            "error": str(e)
-        }), 500
-
-
-# =========================================================
-# CLEAN GEMINI RESPONSE
-# =========================================================
-
-def clean_json_response(text):
-
-    if not text:
-
-        raise ValueError(
-            "Gemini returned an empty response."
-        )
-
-    text = text.strip()
-
-    # Remove Markdown code fences if Gemini
-    # accidentally adds them.
-
-    if text.startswith("```"):
-
-        lines = text.splitlines()
-
-        if (
-            lines
-            and lines[0].strip().lower()
-            in ("```json", "```")
-        ):
-
-            lines = lines[1:]
-
-        if (
-            lines
-            and lines[-1].strip() == "```"
-        ):
-
-            lines = lines[:-1]
-
-        text = "\n".join(lines).strip()
-
-    return text
-
-
-# =========================================================
-# VALIDATE FLASHCARD
-# =========================================================
-
-def validate_card(card):
-
-    if not isinstance(card, dict):
-
-        return False
-
-    required_fields = [
-        "word",
-        "meaning",
-        "part_of_speech",
-        "article",
-        "gender",
-        "plural",
-        "german_sentence",
-        "english_sentence"
-    ]
-
-    for field in required_fields:
-
-        if field not in card:
-
-            return False
-
-        if not isinstance(
-            card[field],
-            str
-        ):
-
-            return False
-
-    if not card["word"].strip():
-
-        return False
-
-    return True
-
-
-# =========================================================
-# GENERATE FLASHCARD
-# =========================================================
-
-@app.route("/generate", methods=["POST"])
+@app.post("/generate")
 def generate():
-
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "error": "No data received."
-        }), 400
-
-    word = str(
-    data.get(
-        "word",
-        ""
+    allowed, retry_after = rate_limit(
+        "generate", GENERATION_RATE_LIMIT, GENERATION_RATE_WINDOW
     )
-).strip()
-    topic = str(
-        data.get(
-            "topic",
-            ""
-        )
-    ).strip()
+    if not allowed:
+        return rate_limit_response(retry_after)
 
-    language = str(
-        data.get(
-            "language",
-            ""
-        )
-    ).strip()
+    data = json_data()
+    try:
+        word = validate_text(data.get("word"), "Word", MAX_WORD_LENGTH)
+        topic = validate_text(data.get("topic"), "Topic", MAX_TOPIC_LENGTH)
+        language = validate_text(data.get("language"), "Language", MAX_LANGUAGE_LENGTH)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not language:
-
-        return jsonify({
-            "error": "Please select a language."
-        }), 400
-
-    user_input = word if word else topic
-
-    if not user_input:
-
-        return jsonify({
-            "error": "Please enter a word or topic."
-        }), 400
-
-
-    # =====================================================
-    # CARD COUNT
-    # =====================================================
-
-    card_count = data.get(
-        "card_count",
-        1
-    )
+        return jsonify({"error": "Please select a language."}), 400
+    if language.title() not in SUPPORTED_LANGUAGES:
+        return jsonify({"error": "That language is not supported."}), 400
+    if not word and not topic:
+        return jsonify({"error": "Please enter a word or topic."}), 400
 
     try:
-
-        card_count = int(card_count)
-
-    except (TypeError, ValueError):
-
-        card_count = 1
-
-    # Prevent unreasonable requests.
-
-    card_count = max(
-        1,
-        min(card_count, 50)
-    )
-
-
-    # =====================================================
-    # SINGLE WORD
-    # =====================================================
-
-    if word:
-
-        prompt = f"""
-You are an expert language teacher.
-
-Create exactly ONE vocabulary flashcard for this word:
-
-{word}
-
-The target language is:
-{language}
-
-The word must be analyzed and presented as vocabulary for learning the target language.
-
-Return ONLY a valid JSON object.
-
-Do not return Markdown.
-Do not return ```json.
-Do not add any explanation before or after the JSON.
-
-Use exactly these fields, all as strings:
-
-{{
-    "word": "",
-    "meaning": "",
-    "part_of_speech": "",
-    "article": "",
-    "gender": "",
-    "plural": "",
-    "german_sentence": "",
-    "english_sentence": ""
-}}
-
-Rules:
-
-1. "word" must contain the vocabulary word requested by the user.
-2. "meaning" must contain its English meaning.
-3. "part_of_speech" must be Noun, Verb, Adjective, Adverb, etc.
-4. If the target language uses articles, provide the correct article when applicable.
-5. If the target language has grammatical gender and it applies, provide it.
-6. If the word has a plural form, provide it.
-7. If article, gender, or plural does not apply, use an empty string.
-8. Create a natural example sentence in the target language appropriate for a language learner.
-9. Provide the English translation of that sentence.
-10. Every field must be a JSON string.
-11. "german_sentence" must contain the example sentence in the target language. The field name is kept only for compatibility with the existing application.
-12. "english_sentence" must contain the English translation.
-13. Return ONLY the JSON object.
-"""
-
-
-    # =====================================================
-    # TOPIC
-    # =====================================================
-
-    else:
-
-        prompt = f"""
-You are an expert language teacher.
-
-Create exactly {card_count} useful vocabulary flashcards
-about this topic:
-
-{topic}
-
-The target language is:
-{language}
-
-Create vocabulary that is useful for a learner of this target language.
-
-Return ONLY a valid JSON object.
-
-Do not return Markdown.
-Do not return ```json.
-Do not add any explanation before or after the JSON.
-
-Use exactly this structure:
-
-{{
-    "flashcards": [
-        {{
-            "word": "",
-            "meaning": "",
-            "part_of_speech": "",
-            "article": "",
-            "gender": "",
-            "plural": "",
-            "german_sentence": "",
-            "english_sentence": ""
-        }}
-    ]
-}}
-
-Rules:
-
-1. Return exactly {card_count} flashcards.
-2. Every field must be a JSON string.
-3. "word" must be a vocabulary word in the target language.
-4. "meaning" must be its English meaning.
-5. "part_of_speech" must be Noun, Verb, Adjective, Adverb, etc.
-6. If the target language uses articles, provide the correct article when applicable.
-7. If the target language has grammatical gender and it applies, provide it.
-8. If the word has a plural form, provide it.
-9. If article, gender, or plural does not apply, use an empty string.
-10. Create natural example sentences in the target language appropriate for a language learner.
-11. Provide English translations.
-12. "german_sentence" must contain the example sentence in the target language. The field name is kept only for compatibility with the existing application.
-13. "english_sentence" must contain the English translation.
-14. Return ONLY the JSON object.
-"""
-
-
-    # =====================================================
-    # CALL GEMINI
-    # =====================================================
-
-    try:
-
-        response = client.models.generate_content(
-            model="gemini-3.5-flash-lite",
-            contents=prompt
-        )
-
-        text = clean_json_response(
-            response.text
-        )
-
-        result = json.loads(text)
-
-
-        # =================================================
-        # SINGLE WORD
-        # =================================================
-
         if word:
-
-            if not validate_card(result):
-
-                raise ValueError(
-                    "Gemini returned an invalid flashcard."
-                )
-
+            card = generate_word_card(word, language)
             return jsonify({
-                "flashcards": [
-                    result
-                ]
+                "flashcards": [card],
             })
 
+        raw_count = data.get("card_count", 1)
+        try:
+            card_count = int(raw_count)
+        except (TypeError, ValueError):
+            card_count = 1
+        card_count = max(1, min(card_count, MAX_CARD_COUNT))
 
-        # =================================================
-        # TOPIC
-        # =================================================
+        prompt = f"""
+You are an expert language teacher.
+Create exactly {card_count} useful vocabulary flashcards about this topic: {json.dumps(topic, ensure_ascii=False)}
+Target language: {language}
 
-        if not isinstance(
-            result,
-            dict
-        ):
-
+Requirements:
+- Every field must be a string.
+- Use useful vocabulary rather than repeated variants.
+- Use accurate English meanings.
+- Article/gender/plural should be filled only when applicable.
+- target_sentence must be a natural target-language example sentence.
+- english_sentence must accurately translate target_sentence.
+Return only the required structured JSON object.
+"""
+        generated = gemini_generate(prompt, FLASHCARDS_SCHEMA)
+        cards = generated.get("flashcards") if isinstance(generated, dict) else None
+        if not isinstance(cards, list) or len(cards) != card_count:
             raise ValueError(
-                "Gemini returned an invalid flashcard response."
+                f"The AI returned an unexpected number of flashcards; expected {card_count}."
             )
 
-        flashcards = result.get(
-            "flashcards"
-        )
-
-        if not isinstance(
-            flashcards,
-            list
-        ):
-
-            raise ValueError(
-                "Gemini response does not contain a valid flashcards array."
-            )
-
-        if len(flashcards) != card_count:
-
-            raise ValueError(
-                f"Gemini returned {len(flashcards)} cards "
-                f"instead of {card_count}."
-            )
-
-        for card in flashcards:
-
+        for index, card in enumerate(cards, start=1):
             if not validate_card(card):
-
-                raise ValueError(
-                    "Gemini returned an invalid flashcard."
-                )
+                raise ValueError(f"The AI returned an invalid flashcard at position {index}.")
 
         return jsonify({
-            "flashcards": flashcards
+            "flashcards": cards,
         })
 
-
-    except json.JSONDecodeError:
-
-        return jsonify({
-            "error": "Gemini returned invalid JSON.",
-            "details": text if "text" in locals() else ""
-        }), 500
-
-
-    except Exception as e:
-
-        return jsonify({
-            "error": f"Gemini error: {str(e)}"
-        }), 500
+    except ValueError as exc:
+        logger.warning("Generation validation failure: %s", exc)
+        return jsonify({"error": str(exc)}), 422
+    except RuntimeError as exc:
+        logger.error("Generation service failure: %s", exc)
+        return jsonify({"error": str(exc)}), 502
+    except Exception:
+        logger.exception("Unexpected generation failure")
+        return jsonify({"error": "Could not generate the flashcard right now."}), 500
 
 
-# =========================================================
-# GENERATE PRONUNCIATION AUDIO
-# =========================================================
-
-def create_pronunciation(word, language):
-
-    if not word:
-
-        raise Exception(
-            "Cannot generate pronunciation because the word is empty."
-        )
-
-    # gTTS contains a built-in list of supported languages.
-    # We match the language name selected by the user
-    # against that list (cached after the first lookup).
-
-    language_code = get_language_code(language)
-
-    if not language_code:
-
-        raise Exception(
-            f"Pronunciation is not currently available for {language}. "
-            "The flashcard can still be generated, but this language is not supported by gTTS."
-        )
-
-    # -----------------------------------------------------
-    # Create safe filename
-    # -----------------------------------------------------
-
-    safe_word = re.sub(
-        r"[^a-zA-Z0-9äöüÄÖÜß_-]",
-        "_",
-        word
+@app.post("/pronunciation-audio")
+def pronunciation_audio():
+    allowed, retry_after = rate_limit(
+        "tts", TTS_RATE_LIMIT, TTS_RATE_WINDOW
     )
+    if not allowed:
+        return rate_limit_response(retry_after)
 
-    safe_language = re.sub(
-        r"[^a-zA-Z0-9_-]",
-        "_",
-        language.lower()
-    )
-
-    filename = f"{safe_language}_{safe_word}.mp3"
-
-    # A unique temp path avoids two concurrent requests for the
-    # same word/language colliding on the same file on disk.
-
-    temp_path = os.path.join(
-        tempfile.gettempdir(),
-        f"{uuid.uuid4().hex}_{filename}"
-    )
-
-
+    data = json_data()
     try:
+        text = validate_text(data.get("text", data.get("word")), "Text", MAX_WORD_LENGTH + 240)
+        language = validate_text(data.get("language"), "Language", MAX_LANGUAGE_LENGTH)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
-        # -------------------------------------------------
-        # Generate pronunciation
-        # -------------------------------------------------
+    if not text:
+        return jsonify({"error": "No pronunciation text was provided."}), 400
+    if not language:
+        return jsonify({"error": "No language was selected."}), 400
+    if language.title() not in SUPPORTED_LANGUAGES:
+        return jsonify({"error": "That language is not supported."}), 400
 
-        tts = gTTS(
-            text=word,
-            lang=language_code,
-            slow=False
-        )
-
-        tts.save(temp_path)
-
-
-        # -------------------------------------------------
-        # Read MP3 and convert to Base64
-        # -------------------------------------------------
-
-        with open(
-            temp_path,
-            "rb"
-        ) as audio_file:
-
-            audio_base64 = base64.b64encode(
-                audio_file.read()
-            ).decode("utf-8")
-
-
-        # -------------------------------------------------
-        # Store audio inside Anki media collection
-        # -------------------------------------------------
-
-        result = anki_request(
-            "storeMediaFile",
-            {
-                "filename": filename,
-                "data": audio_base64
-            }
-        )
-
-        if result.get("error"):
-
-            raise Exception(
-                result["error"]
-            )
-
-        return filename
-
-
+    path = None
+    try:
+        path, filename = create_pronunciation_file(text, language, kind="browser", slow=True)
+        with open(path, "rb") as audio_file:
+            encoded = base64.b64encode(audio_file.read()).decode("ascii")
+        return jsonify({
+            "success": True,
+            "filename": filename,
+            "data": encoded,
+        })
+    except RuntimeError as exc:
+        logger.warning("TTS failure: %s", exc)
+        return jsonify({"error": str(exc)}), 502
+    except Exception:
+        logger.exception("Unexpected TTS failure")
+        return jsonify({"error": "Could not generate pronunciation right now."}), 500
     finally:
-
-        # Remove temporary MP3 from computer.
-
-        if os.path.exists(temp_path):
-
+        if path and os.path.exists(path):
             try:
-
-                os.remove(temp_path)
-
+                os.remove(path)
             except OSError:
-
                 pass
 
 
-# =========================================================
-# GENERATE PRONUNCIATION AUDIO FOR BROWSER
-# =========================================================
-
-@app.route("/pronunciation-audio", methods=["POST"])
-def pronunciation_audio():
-
-    data = request.get_json()
-
-    if not data:
-        return jsonify({
-            "error": "No pronunciation data received."
-        }), 400
-
-    text = str(
-    data.get(
-        "text",
-        data.get("word", "")
-    )
-).strip()
-
-    language = str(
-        data.get(
-            "language",
-            ""
-        )
-    ).strip()
-
-    if not text:
-       return jsonify({
-        "error": "No pronunciation text was provided."
-    }), 400
-
-    if not language:
-        return jsonify({
-            "error": "No language was selected."
-        }), 400
-
-    try:
-
-        language_code = get_language_code(
-            language
-        )
-
-        if not language_code:
-
-            return jsonify({
-                "error":
-                    f"Pronunciation is not currently available for {language}."
-            }), 400
-
-
-        # -------------------------------------------------
-        # Create a safe filename
-        # -------------------------------------------------
-
-        safe_word = re.sub(
-            r"[^a-zA-Z0-9äöüÄÖÜß_-]",
-            "_",
-            text
-        )
-
-        safe_language = re.sub(
-            r"[^a-zA-Z0-9_-]",
-            "_",
-            language.lower()
-        )
-
-        filename = (
-            f"{safe_language}_{safe_word}.mp3"
-        )
-
-
-        # -------------------------------------------------
-        # Create unique temporary MP3
-        # -------------------------------------------------
-
-        temp_path = os.path.join(
-            tempfile.gettempdir(),
-            f"{uuid.uuid4().hex}_{filename}"
-        )
-
-
-        try:
-
-            # -------------------------------------------------
-            # Generate pronunciation
-            # -------------------------------------------------
-
-            tts = gTTS(
-                text=text,
-                lang=language_code,
-                slow=True
-            )
-
-            tts.save(
-                temp_path
-            )
-
-
-            # -------------------------------------------------
-            # Convert MP3 to Base64
-            # -------------------------------------------------
-
-            with open(
-                temp_path,
-                "rb"
-            ) as audio_file:
-
-                audio_base64 = base64.b64encode(
-                    audio_file.read()
-                ).decode("utf-8")
-
-
-            return jsonify({
-
-                "success":
-                    True,
-
-                "filename":
-                    filename,
-
-                "data":
-                    audio_base64
-
-            })
-
-
-        finally:
-
-            # Remove temporary MP3.
-
-            if os.path.exists(temp_path):
-
-                try:
-
-                    os.remove(
-                        temp_path
-                    )
-
-                except OSError:
-
-                    pass
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "error":
-                f"Could not generate pronunciation: {str(e)}"
-
-        }), 500
-
-# =========================================================
-# CREATE PRONUNCIATION FILE FOR ANKI PACKAGE
-# =========================================================
-
-def create_pronunciation_file(word, language):
-
-    if not word:
-        raise Exception(
-            "Cannot generate pronunciation because the word is empty."
-        )
-
-    # Find the gTTS language code from the selected
-    # language name (cached after the first lookup).
-
-    language_code = get_language_code(language)
-
-    if not language_code:
-
-        raise Exception(
-            f"Pronunciation is not currently available for {language}."
-        )
-
-    # Create a safe filename.
-
-    safe_word = re.sub(
-        r"[^a-zA-Z0-9äöüÄÖÜß_-]",
-        "_",
-        word
-    )
-
-    safe_language = re.sub(
-        r"[^a-zA-Z0-9_-]",
-        "_",
-        language.lower()
-    )
-
-    filename = f"{safe_language}_{safe_word}.mp3"
-
-    # A unique temp path avoids two concurrent requests colliding
-    # on the same file on disk.
-
-    temp_path = os.path.join(
-        tempfile.gettempdir(),
-        f"{uuid.uuid4().hex}_{filename}"
-    )
-
-    # Generate the MP3.
-
-    tts = gTTS(
-        text=word,
-        lang=language_code,
-        slow=False
-    )
-
-    tts.save(temp_path)
-
-    return temp_path
-
-
-# =========================================================
-# CHECK FOR DUPLICATE WORD IN ANKI
-# =========================================================
-
-def find_duplicate_word(deck, word):
-
-    if not word:
-        return None
-
-
-    # -----------------------------------------------------
-    # SEARCH THE ENTIRE ANKI COLLECTION
-    # -----------------------------------------------------
-
-    safe_word = str(
-        word
-    ).replace(
-        '"',
-        '\\"'
-    )
-
-
-    result = anki_request(
-        "findNotes",
-        {
-            "query": f'front:"{safe_word}"'
-        }
-    )
-
-
-    if result.get("error"):
-
-        raise Exception(
-            result["error"]
-        )
-
-
-    note_ids = result.get(
-        "result",
-        []
-    )
-
-
-    if not note_ids:
-
-        return None
-
-
-    # -----------------------------------------------------
-    # GET NOTE INFORMATION
-    # -----------------------------------------------------
-
-    notes_result = anki_request(
-        "notesInfo",
-        {
-            "notes": note_ids
-        }
-    )
-
-
-    if notes_result.get("error"):
-
-        raise Exception(
-            notes_result["error"]
-        )
-
-
-    notes = notes_result.get(
-        "result",
-        []
-    )
-
-
-    target_word = (
-        str(word)
-        .strip()
-        .casefold()
-    )
-
-
-    selected_deck_duplicate = None
-    other_deck_duplicate = None
-
-
-    # -----------------------------------------------------
-    # CHECK EACH MATCH
-    # -----------------------------------------------------
-
-    for note in notes:
-
-        fields = note.get(
-            "fields",
-            {}
-        )
-
-
-        front_field = fields.get(
-            "Front"
-        )
-
-
-        if not front_field:
-
-            continue
-
-
-        existing_word = str(
-            front_field.get(
-                "value",
-                ""
-            )
-        ).strip()
-
-
-        # Remove HTML formatting.
-        existing_word = re.sub(
-            r"<[^>]*>",
-            "",
-            existing_word
-        ).strip()
-
-
-        # Compare case-insensitively.
-        if existing_word.casefold() != target_word:
-
-            continue
-
-
-        # -------------------------------------------------
-        # FIND THE DECK
-        # -------------------------------------------------
-
-        card_ids = note.get(
-            "cards",
-            []
-        )
-
-
-        existing_deck = None
-
-
-        if card_ids:
-
-            card_info_result = anki_request(
-                "cardsInfo",
-                {
-                    "cards": card_ids
-                }
-            )
-
-
-            if not card_info_result.get("error"):
-
-                card_info = card_info_result.get(
-                    "result",
-                    []
-                )
-
-
-                if card_info:
-
-                    existing_deck = card_info[0].get(
-                        "deckName"
-                    )
-
-
-        duplicate_info = {
-            "note_id": note.get(
-                "noteId"
-            ),
-
-            "word": existing_word,
-
-            "deck": existing_deck
-        }
-
-
-        # -------------------------------------------------
-        # PRIORITIZE SELECTED DECK
-        # -------------------------------------------------
-
-        if existing_deck == deck:
-
-            selected_deck_duplicate = duplicate_info
-
-            break
-
-
-        # Keep the first matching card from another deck
-        # as a fallback.
-        if other_deck_duplicate is None:
-
-            other_deck_duplicate = duplicate_info
-
-
-    # -----------------------------------------------------
-    # RETURN SELECTED-DECK MATCH FIRST
-    # -----------------------------------------------------
-
-    if selected_deck_duplicate:
-
-        return selected_deck_duplicate
-
-
-    if other_deck_duplicate:
-
-        return other_deck_duplicate
-
-
-    return None
-
-
-
-# =========================================================
-# CHECK DUPLICATE FROM WEBSITE
-# =========================================================
-
-@app.route("/check-duplicate", methods=["POST"])
-def check_duplicate():
-
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "error": "No duplicate-check data received."
-        }), 400
-
-
-    deck = str(
-        data.get(
-            "deck",
-            ""
-        )
-    ).strip()
-
-
-    word = str(
-        data.get(
-            "word",
-            ""
-        )
-    ).strip()
-
-
-    if not deck:
-
-        return jsonify({
-            "error": "No Anki deck was selected."
-        }), 400
-
-
-    if not word:
-
-        return jsonify({
-            "error": "No word was provided."
-        }), 400
-
-
-    try:
-
-        duplicate = find_duplicate_word(
-            deck,
-            word
-        )
-
-
-        if duplicate:
-            return jsonify({
-
-        "duplicate": True,
-
-        "word":
-            duplicate["word"],
-
-        "note_id":
-            duplicate["note_id"],
-
-        "deck":
-            duplicate["deck"]
-
-    })
-
-        return jsonify({
-
-            "duplicate": False
-
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "error":
-                f"Could not check for duplicates: {str(e)}"
-
-        }), 500
-
-# =========================================================
-# ADD FLASHCARD TO ANKI
-# =========================================================
-
-@app.route("/add-to-anki", methods=["POST"])
-def add_to_anki():
-
-    data = request.get_json()
-
-    if not data:
-
-        return jsonify({
-            "error": "No card data received."
-        }), 400
-
-
-    deck = str(
-        data.get(
-            "deck",
-            ""
-        )
-    ).strip()
-
-    card = data.get(
-        "card"
-    )
-
-    language = str(
-        data.get(
-            "language",
-            ""
-        )
-    ).strip()
-
-
-    if not deck:
-
-        return jsonify({
-            "error": "No Anki deck was selected."
-        }), 400
-
-
-    if not language:
-
-        return jsonify({
-            "error": "No language was selected."
-        }), 400
-
-
-    if not isinstance(
-        card,
-        dict
-    ):
-
-        return jsonify({
-            "error": "No valid flashcard data was received."
-        }), 400
-
-
-    try:
-
-        # =================================================
-        # CHECK DECK
-        # =================================================
-
-        decks_result = anki_request(
-            "deckNames"
-        )
-
-        if decks_result.get("error"):
-
-            raise Exception(
-                decks_result["error"]
-            )
-
-        decks = decks_result.get(
-            "result",
-            []
-        )
-
-        if deck not in decks:
-
-            return jsonify({
-                "error":
-                    f'Anki deck "{deck}" does not exist.'
-            }), 400
-
-
-        # =================================================
-        # CHECK BASIC NOTE TYPE
-        # =================================================
-
-        models_result = anki_request(
-            "modelNames"
-        )
-
-        if models_result.get("error"):
-
-            raise Exception(
-                models_result["error"]
-            )
-
-        models = models_result.get(
-            "result",
-            []
-        )
-
-        if "Basic" not in models:
-
-            return jsonify({
-                "error":
-                    'The Anki note type "Basic" was not found.'
-            }), 500
-
-
-        # =================================================
-        # GET CARD DATA
-        # =================================================
-
-        word = str(
-            card.get(
-                "word",
-                ""
-            )
-        ).strip()
-
-        meaning = str(
-            card.get(
-                "meaning",
-                ""
-            )
-        ).strip()
-
-        part_of_speech = str(
-            card.get(
-                "part_of_speech",
-                ""
-            )
-        ).strip()
-
-        article = str(
-            card.get(
-                "article",
-                ""
-            )
-        ).strip()
-
-        gender = str(
-            card.get(
-                "gender",
-                ""
-            )
-        ).strip()
-
-        plural = str(
-            card.get(
-                "plural",
-                ""
-            )
-        ).strip()
-
-        target_sentence = str(
-            card.get(
-                "german_sentence",
-                ""
-            )
-        ).strip()
-
-        english_sentence = str(
-            card.get(
-                "english_sentence",
-                ""
-            )
-        ).strip()
-
-
-        if not word:
-
-            return jsonify({
-                "error":
-                    "The generated flashcard has no word."
-            }), 400
-
-
-        # =================================================
-        # GENERATE PRONUNCIATION (non-fatal)
-        # =================================================
-        #
-        # If gTTS/AnkiConnect media storage fails (unsupported
-        # language, no internet, etc.) we still want the note
-        # itself to be saved — just without audio — rather than
-        # failing the whole request.
-
-        pronunciation_html = ""
-
-        try:
-
-            pronunciation_file = create_pronunciation(
-                word,
-                language
-            )
-
-            pronunciation_html = (
-                "<b>🔊 Pronunciation:</b>"
-                "<br>"
-                f'<div>[sound:{escape(pronunciation_file)}]</div>'
-            )
-
-        except Exception as pronunciation_error:
-
-            pronunciation_file = None
-
-            pronunciation_html = (
-                "<b>🔊 Pronunciation:</b>"
-                "<br>"
-                f"<div>{escape(str(pronunciation_error))}</div>"
-            )
-
-
-        # =================================================
-        # ESCAPE HTML
-        # =================================================
-
-        word_html = escape(
-            word
-        )
-
-        meaning_html = escape(
-            meaning
-        )
-
-        part_html = escape(
-            part_of_speech
-        )
-
-        article_html = escape(
-            article
-        )
-
-        gender_html = escape(
-            gender
-        )
-
-        plural_html = escape(
-            plural
-        )
-
-        target_sentence_html = escape(
-            target_sentence
-        )
-
-        english_sentence_html = escape(
-            english_sentence
-        )
-
-
-        # =================================================
-        # BUILD ANKI BACK
-        # =================================================
-
-        back = f"""
-<div>
-
-<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
-{word_html}
-</div>
-
-<b>Meaning:</b>
-{meaning_html}
-
-<br><br>
-
-<b>Part of speech:</b>
-{part_html}
-
-<br><br>
-
-<b>Article:</b>
-{article_html}
-
-<br>
-
-<b>Gender:</b>
-{gender_html}
-
-<br>
-
-<b>Plural:</b>
-{plural_html}
-
-<br><br>
-
-<b>{escape(language)} sentence:</b>
-
-<br>
-
-{target_sentence_html}
-
-<br><br>
-
-<b>English sentence:</b>
-
-<br>
-
-{english_sentence_html}
-
-<br><br>
-
-{pronunciation_html}
-
-</div>
-"""
-
-
-        # =================================================
-        # CREATE SAFE LANGUAGE TAG
-        # =================================================
-
-        language_tag = re.sub(
-            r"[^a-zA-Z0-9_-]",
-            "-",
-            language.lower()
-        )
-
-
-        # =================================================
-        # ADD NOTE
-        # =================================================
-
-        result = anki_request(
-            "addNote",
-            {
-                "note": {
-
-                    "deckName": deck,
-
-                    "modelName": "Basic",
-
-                    "fields": {
-
-                        "Front": word_html,
-
-                        "Back": back
-                    },
-
-                    "options": {
-
-                        "allowDuplicate": False
-                    },
-
-                    "tags": [
-                        "ai-flashcards",
-                        f"language-{language_tag}"
-                    ]
-                }
-            }
-        )
-
-
-        # =================================================
-        # CHECK ANKI RESULT
-        # =================================================
-
-        if result.get("error"):
-
-            return jsonify({
-                "error": result["error"]
-            }), 500
-
-
-        note_id = result.get(
-            "result"
-        )
-
-
-        if not note_id:
-
-            return jsonify({
-                "error":
-                    "Anki did not return a note ID.",
-                "details": result
-            }), 500
-
-
-        # =================================================
-        # SUCCESS
-        # =================================================
-
-        return jsonify({
-
-            "success": True,
-
-            "message":
-                "Flashcard and pronunciation added to Anki!"
-                if pronunciation_file
-                else "Flashcard added to Anki (pronunciation unavailable).",
-
-            "note_id":
-                note_id,
-
-            "audio":
-                pronunciation_file
-        })
-
-
-    except Exception as e:
-
-        return jsonify({
-
-            "error":
-                f"Could not add the flashcard to Anki: {str(e)}"
-
-        }), 500
-
-
-# =========================================================
-# DOWNLOAD FLASHCARD AS ANKI PACKAGE
-# =========================================================
-
-@app.route("/download-flashcard", methods=["POST"])
+@app.post("/download-flashcard")
 def download_flashcard():
+    allowed, retry_after = rate_limit(
+        "download", DOWNLOAD_RATE_LIMIT, DOWNLOAD_RATE_WINDOW
+    )
+    if not allowed:
+        return rate_limit_response(retry_after)
 
-    data = request.get_json()
-
-    if not data:
-        return jsonify({
-            "error": "No flashcard data received."
-        }), 400
-
+    data = json_data()
     card = data.get("card")
-
-    language = str(
-        data.get(
-            "language",
-            ""
-        )
-    ).strip()
-
-    if not isinstance(card, dict):
-        return jsonify({
-            "error": "No valid flashcard data was received."
-        }), 400
+    try:
+        language = validate_text(data.get("language"), "Language", MAX_LANGUAGE_LENGTH)
+        requested_deck = validate_text(data.get("deck"), "Deck", 120)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
 
     if not language:
-        return jsonify({
-            "error": "No language was selected."
-        }), 400
+        return jsonify({"error": "Please select a language."}), 400
+    if language.title() not in SUPPORTED_LANGUAGES:
+        return jsonify({"error": "That language is not supported."}), 400
+    if not validate_card(card):
+        return jsonify({"error": "The flashcard data is invalid."}), 400
 
-    # -----------------------------------------------------
-    # GET CARD DATA
-    # -----------------------------------------------------
-
-    word = str(
-        card.get(
-            "word",
-            ""
-        )
-    ).strip()
-
-    meaning = str(
-        card.get(
-            "meaning",
-            ""
-        )
-    ).strip()
-
-    part_of_speech = str(
-        card.get(
-            "part_of_speech",
-            ""
-        )
-    ).strip()
-
-    article = str(
-        card.get(
-            "article",
-            ""
-        )
-    ).strip()
-
-    gender = str(
-        card.get(
-            "gender",
-            ""
-        )
-    ).strip()
-
-    plural = str(
-        card.get(
-            "plural",
-            ""
-        )
-    ).strip()
-
-    target_sentence = str(
-        card.get(
-            "german_sentence",
-            ""
-        )
-    ).strip()
-
-    english_sentence = str(
-        card.get(
-            "english_sentence",
-            ""
-        )
-    ).strip()
-
-    if not word:
-        return jsonify({
-            "error": "The flashcard has no word."
-        }), 400
+    word_audio_file = None
+    sentence_audio_file = None
+    temp_apkg = None
 
     try:
-
-        # -------------------------------------------------
-        # CREATE ANKI MODEL
-        # -------------------------------------------------
-
         model = genanki.Model(
             1607392319,
             "AI Flashcards Basic Model",
-            fields=[
-                {
-                    "name": "Front"
-                },
-                {
-                    "name": "Back"
-                }
-            ],
-            templates=[
-                {
-                    "name": "Card 1",
-                    "qfmt": "{{Front}}",
-                    "afmt": "{{FrontSide}}<hr id='answer'>{{Back}}"
-                }
-            ],
+            fields=[{"name": "Front"}, {"name": "Back"}],
+            templates=[{
+                "name": "Card 1",
+                "qfmt": "{{Front}}",
+                "afmt": "{{FrontSide}}<hr id='answer'>{{Back}}",
+            }],
             css="""
 .card {
     font-family: Arial, sans-serif;
@@ -1762,349 +582,84 @@ def download_flashcard():
     background-color: #2f2f2f;
     padding: 20px;
 }
-
-.card b {
-    font-weight: bold;
-}
-
-.card hr {
-    border: 0;
-    border-top: 1px solid #555555;
-    margin: 20px 0;
-}
-"""
+.card b { font-weight: bold; }
+.card hr { border: 0; border-top: 1px solid #555555; margin: 20px 0; }
+""",
         )
 
-        # -------------------------------------------------
-        # BUILD BACK OF CARD
-        # -------------------------------------------------
-
-        word_html = escape(word)
-
-        meaning_html = escape(
-            meaning
-        )
-
-        part_html = escape(
-            part_of_speech
-        )
-
-        article_html = escape(
-            article
-        )
-
-        gender_html = escape(
-            gender
-        )
-
-        plural_html = escape(
-            plural
-        )
-
-        target_sentence_html = escape(
-            target_sentence
-        )
-
-        english_sentence_html = escape(
-            english_sentence
-        )
-
-        back = f"""
-<div>
-
-<div style="font-size: 28px; font-weight: bold; margin-bottom: 20px;">
-{word_html}
-</div>
-
-<b>Meaning:</b>
-{meaning_html}
-
-<br><br>
-
-<b>Part of speech:</b>
-{part_html}
-
-<br><br>
-
-<b>Article:</b>
-{article_html}
-
-<br>
-
-<b>Gender:</b>
-{gender_html}
-
-<br>
-
-<b>Plural:</b>
-{plural_html}
-
-<br><br>
-
-<b>{escape(language)} sentence:</b>
-
-<br>
-
-{target_sentence_html}
-
-<br><br>
-
-<b>English sentence:</b>
-
-<br>
-
-{english_sentence_html}
-
-</div>
-"""
-
-        # -------------------------------------------------
-        # CREATE NOTE
-        # -------------------------------------------------
-
+        back = build_anki_back(card, language)
         note = genanki.Note(
             model=model,
-            fields=[
-                word_html,
-                back
-            ]
+            fields=[escape(card["word"]), back],
         )
 
-        # -------------------------------------------------
-        # CREATE DECK
-        # -------------------------------------------------
-
+        # Use the user's selected deck when supplied; fall back to a deterministic
+        # generated deck for the manual-import option.
+        deck_name = requested_deck or f"AI Flashcards - {language}"
         deck_id = (
-            int(
-                hashlib.md5(
-                    f"AI Flashcards {language}".encode("utf-8")
-                ).hexdigest(),
-                16
-            ) % 9000000000
+            int(hashlib.md5(deck_name.encode("utf-8")).hexdigest(), 16)
+            % 9000000000
         ) + 1000000000
-
-        deck = genanki.Deck(
-            deck_id,
-            f"AI Flashcards - {language}"
-        )
-
-        deck.add_note(
-            note
-        )
-
-        # -------------------------------------------------
-        # CREATE PACKAGE
-        # -------------------------------------------------
-
-        package = genanki.Package(
-            deck
-        )
-
-        # -------------------------------------------------
-        # GENERATE AUDIO
-        # -------------------------------------------------
-
-        word_pronunciation_file = None
-
-        sentence_pronunciation_file = None
-
-
-        # -------------------------------------------------
-        # WORD PRONUNCIATION
-        # -------------------------------------------------
+        deck = genanki.Deck(deck_id, deck_name)
+        deck.add_note(note)
+        package = genanki.Package(deck)
 
         try:
-
-            word_pronunciation_file = create_pronunciation_file(
-                word,
-                language
+            word_audio_file, word_filename = create_pronunciation_file(
+                card["word"], language, kind="word", slow=False
             )
-
-        except Exception as audio_error:
-
-            print(
-                "Word pronunciation could not be generated:",
-                audio_error
-            )
-
-
-        # -------------------------------------------------
-        # SENTENCE PRONUNCIATION
-        # -------------------------------------------------
+            package.media_files.append(word_audio_file)
+        except Exception as exc:
+            word_filename = None
+            logger.warning("Word audio skipped during APKG creation: %s", exc)
 
         try:
-
-            sentence_pronunciation_file = create_pronunciation_file(
-                target_sentence,
-                language
+            sentence_audio_file, sentence_filename = create_pronunciation_file(
+                card["target_sentence"], language, kind="sentence", slow=False
             )
+            package.media_files.append(sentence_audio_file)
+        except Exception as exc:
+            sentence_filename = None
+            logger.warning("Sentence audio skipped during APKG creation: %s", exc)
 
-        except Exception as audio_error:
-
-            print(
-                "Sentence pronunciation could not be generated:",
-                audio_error
-            )
-
-
-        # -------------------------------------------------
-        # ADD AUDIO TO PACKAGE
-        # -------------------------------------------------
-
-        back_with_audio = back
-
-
-        if word_pronunciation_file:
-
-            package.media_files.append(
-                word_pronunciation_file
-            )
-
-            back_with_audio += (
-                "<br><br>"
-                "<b>🔊 Word Pronunciation:</b>"
-                "<br>"
-                f"[sound:{os.path.basename(word_pronunciation_file)}]"
-            )
-
-
-        if sentence_pronunciation_file:
-
-            package.media_files.append(
-                sentence_pronunciation_file
-            )
-
-            back_with_audio += (
-                "<br><br>"
-                "<b>🔊 Sentence Pronunciation:</b>"
-                "<br>"
-                f"[sound:{os.path.basename(sentence_pronunciation_file)}]"
-            )
-
-
-        # Update the note with the audio references.
-        note.fields[1] = back_with_audio
-
-
-        # -------------------------------------------------
-        # WRITE PACKAGE TO MEMORY
-        # -------------------------------------------------
-
-        package_bytes = io.BytesIO()
+        final_back = build_anki_back(
+            card,
+            language,
+            word_audio=word_filename,
+            sentence_audio=sentence_filename,
+        )
+        note.fields[1] = final_back
 
         temp_apkg = os.path.join(
             tempfile.gettempdir(),
-            f"ai_flashcard_download_{uuid.uuid4().hex}.apkg"
+            f"ai_flashcard_{uuid.uuid4().hex}.apkg",
         )
+        package.write_to_file(temp_apkg)
 
-        package.write_to_file(
-            temp_apkg
-        )
-
-        with open(
-            temp_apkg,
-            "rb"
-        ) as package_file:
-
-            package_bytes.write(
-                package_file.read()
-            )
-
+        package_bytes = io.BytesIO(Path(temp_apkg).read_bytes())
         package_bytes.seek(0)
-
-
-        # -------------------------------------------------
-        # CLEAN TEMPORARY FILES
-        # -------------------------------------------------
-
-        if os.path.exists(
-            temp_apkg
-        ):
-
-            try:
-
-                os.remove(
-                    temp_apkg
-                )
-
-            except OSError:
-
-                pass
-
-
-        if (
-            word_pronunciation_file
-            and os.path.exists(
-                word_pronunciation_file
-            )
-        ):
-
-            try:
-
-                os.remove(
-                    word_pronunciation_file
-                )
-
-            except OSError:
-
-                pass
-
-
-        if (
-            sentence_pronunciation_file
-            and os.path.exists(
-                sentence_pronunciation_file
-            )
-        ):
-
-            try:
-
-                os.remove(
-                    sentence_pronunciation_file
-                )
-
-            except OSError:
-
-                pass
-
-
-        # -------------------------------------------------
-        # DOWNLOAD FILENAME
-        # -------------------------------------------------
-
-        safe_word = re.sub(
-            r"[^a-zA-Z0-9_-]",
-            "_",
-            word
-        )
-
-        filename = (
-            f"AI_Flashcard_{safe_word}.apkg"
-        )
-
+        filename = f"AI_Flashcard_{safe_filename(card['word'], 'flashcard', 40)}.apkg"
 
         return send_file(
             package_bytes,
             mimetype="application/octet-stream",
             as_attachment=True,
-            download_name=filename
+            download_name=filename,
         )
 
+    except Exception:
+        logger.exception("APKG creation failed")
+        return jsonify({"error": "Could not create the Anki package right now."}), 500
+    finally:
+        for path in (temp_apkg, word_audio_file, sentence_audio_file):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
-    except Exception as e:
-
-        return jsonify({
-            "error":
-                f"Could not create Anki package: {str(e)}"
-        }), 500
 
 
-# =========================================================
-# RUN FLASK
-# =========================================================
 
 if __name__ == "__main__":
-
-    app.run(
-        debug=True
-    )
+    app.run(host="0.0.0.0", port=PORT, debug=FLASK_DEBUG)
