@@ -311,19 +311,29 @@ function setAnkiStatus(text, state = "checking") {
 function formatAnkiConnectionError(error) {
     const message = String(error?.message || error || "Unknown error");
     const lower = message.toLowerCase();
-    if (lower.includes("failed to fetch") || lower.includes("networkerror")) {
-        return "Browser could not reach local AnkiConnect. Make sure Anki is running and allow local-device access if your browser asks.";
+
+    if (
+        lower.includes("failed to fetch") ||
+        lower.includes("networkerror") ||
+        lower.includes("connection refused") ||
+        lower.includes("network request failed")
+    ) {
+        return "Web can't connect to your Anki. Make sure Anki is running with AnkiConnect installed.";
     }
+
     if (lower.includes("permission") || lower.includes("denied")) {
-        return "AnkiConnect permission was denied. Reload the page and allow the connection when Anki asks.";
+        return "Web doesn't have permission to connect to your Anki. Reload the page and allow the connection when prompted.";
     }
+
     if (lower.includes("api key")) {
-        return "AnkiConnect requires an API key. Configure the key consistently in AnkiConnect or disable it for this local setup.";
+        return "Web can't connect to your Anki because AnkiConnect requires an API key.";
     }
+
     if (lower.includes("cors") || lower.includes("origin")) {
-        return "AnkiConnect rejected this website origin. Check AnkiConnect's webCorsOriginList and allow this site's origin.";
+        return "Web can't connect to your Anki because AnkiConnect rejected this website.";
     }
-    return message;
+
+    return "Web can't connect to your Anki. Make sure Anki is running with AnkiConnect installed.";
 }
 
 async function ankiFetch(url, payload) {
@@ -394,10 +404,9 @@ async function connectToAnki() {
     ankiPermissionState = "denied";
     setAnkiStatus("Anki not connected", "error");
     throw new Error(
-        "Anki connection failed.\n\n" +
-        errors.join("\n") +
-        "\n\nOpen Anki with AnkiConnect installed, reload the page, and allow the connection when prompted."
-    );
+    "Web can't connect to your Anki.\n\n" +
+    "Make sure Anki is running with AnkiConnect installed, then reload the page."
+);
 }
 
 async function ankiRequest(action, params = {}, options = {}) {
