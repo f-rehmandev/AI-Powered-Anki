@@ -101,10 +101,13 @@ _tts_languages_cache = None
 # host share one limiter instead of keeping separate in-memory buckets.
 # For multiple app instances/containers, point RATE_LIMIT_DB_PATH at a
 # shared writable SQLite location or use a shared external rate-limit store.
-RATE_LIMIT_DB_PATH = os.getenv(
-    "RATE_LIMIT_DB_PATH",
-    str(Path(app.instance_path) / "rate_limit.sqlite3"),
-).strip()
+if os.environ.get("VERCEL"):
+    RATE_LIMIT_DB_PATH = "/tmp/rate_limit.sqlite3"
+else:
+    RATE_LIMIT_DB_PATH = os.getenv(
+        "RATE_LIMIT_DB_PATH",
+        str(Path(app.instance_path) / "rate_limit.sqlite3"),
+    ).strip()
 
 _rate_lock = Lock()
 
