@@ -697,7 +697,7 @@ def build_anki_back(
 
         <div style="font-size:28px;font-weight:bold;text-align:center;">
             {escape(values['word'])}
-            {f'<span style="display:inline-block;margin-left:4em;font-size:14px;font-weight:bold;vertical-align:middle;">🔊 Word Pronunciation:</span>' if word_audio else ""}
+            {f'<span style="display:inline-block;margin-left:4em;font-size:14px;font-weight:bold;vertical-align:middle;">🔊 Word Pronunciation: [sound:{escape(word_audio)}]</span>' if word_audio else ""}
         </div>
 
         <div></div>
@@ -954,7 +954,7 @@ def download_flashcard():
 
         try:
             word_audio_file, word_filename = create_pronunciation_file(
-                card["word"], language, kind="word", slow=False
+                card["word"], language, kind="word", slow=True
             )
             package.media_files.append(word_audio_file)
         except Exception as exc:
@@ -963,7 +963,7 @@ def download_flashcard():
 
         try:
             sentence_audio_file, sentence_filename = create_pronunciation_file(
-                card["target_sentence"], language, kind="sentence", slow=False
+                card["target_sentence"], language, kind="sentence", slow=True
             )
             package.media_files.append(sentence_audio_file)
         except Exception as exc:
@@ -980,7 +980,7 @@ def download_flashcard():
 
             try:
                 higher_word_audio_file, higher_word_filename = create_pronunciation_file(
-                    higher_vocab["word"], language, kind="higher_word", slow=False
+                    higher_vocab["word"], language, kind="higher_word", slow=True
                 )
                 package.media_files.append(higher_word_audio_file)
             except Exception as exc:
@@ -988,7 +988,7 @@ def download_flashcard():
 
             try:
                 higher_sentence_audio_file, higher_sentence_filename = create_pronunciation_file(
-                    higher_vocab["target_sentence"], language, kind="higher_sentence", slow=False
+                    higher_vocab["target_sentence"], language, kind="higher_sentence", slow=True
                 )
                 package.media_files.append(higher_sentence_audio_file)
             except Exception as exc:
